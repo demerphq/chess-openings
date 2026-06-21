@@ -90,7 +90,7 @@ class OpeningParserTest {
     }
 
     @Test
-    fun buildsStartingBoardPreviewWithoutApplyingMoves() {
+    fun buildsStartingBoardPreviewWithAppliedMove() {
         val highlighted = startingBoardSquares("e2e4")
             .filter { it.highlighted }
             .map { it.coordinate }
@@ -100,6 +100,9 @@ class OpeningParserTest {
         assertEquals("bk", startingPieceAt('e', 8))
         assertEquals("wp", startingPieceAt('e', 2))
         assertEquals("", startingPieceAt('e', 4))
+        assertEquals("", previewPieceAt('e', 2, "e2e4"))
+        assertEquals("wp", previewPieceAt('e', 4, "e2e4"))
+        assertEquals("bq", previewPieceAt('a', 8, "a7a8q"))
         assertEquals(emptySet<String>(), highlightedSquaresForUci("castle"))
     }
 

@@ -698,7 +698,7 @@ fun startingBoardSquares(highlightedMove: String): List<BoardSquare> {
             BoardSquare(
                 file = file,
                 rank = rank,
-                pieceCode = startingPieceAt(file, rank),
+                pieceCode = previewPieceAt(file, rank, highlightedMove),
                 highlighted = coordinate in highlightedSquares,
             )
         }
@@ -713,6 +713,37 @@ fun startingPieceAt(file: Char, rank: Int): String =
         1 -> "w${"rnbqkbnr"[file - 'a']}"
         else -> ""
     }
+
+fun previewPieceAt(file: Char, rank: Int, uci: String): String {
+    val coordinate = "$file$rank"
+    if (uci.length < 4) return startingPieceAt(file, rank)
+
+    val from = uci.substring(0, 2)
+    val to = uci.substring(2, 4)
+    if (!from.isBoardCoordinate() || !to.isBoardCoordinate()) {
+        return startingPieceAt(file, rank)
+    }
+
+    val movedPiece = startingPieceAt(from[0], from[1].digitToInt())
+    return when (coordinate) {
+        from -> ""
+        to -> promotedPieceCode(movedPiece, uci.getOrNull(4)) ?: movedPiece
+        else -> startingPieceAt(file, rank)
+    }
+}
+
+private fun promotedPieceCode(pieceCode: String, promotion: Char?): String? {
+    if (pieceCode.isBlank() || promotion == null) return null
+    val side = pieceCode.first()
+    val promotedKind = when (promotion.lowercaseChar()) {
+        'q' -> 'q'
+        'r' -> 'r'
+        'b' -> 'b'
+        'n' -> 'n'
+        else -> return null
+    }
+    return "$side$promotedKind"
+}
 
 fun pieceResourceId(pieceCode: String): Int? =
     when (pieceCode) {

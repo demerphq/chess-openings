@@ -12,6 +12,7 @@ android/.gradle-local/
 android/app/build/
 android/build/
 android/local.properties
+node/node_modules/
 .swiftpm/
 Scripts/SeedBuilder/.seed-cache/
 Scripts/SeedBuilder/build-seed.log

@@ -3,7 +3,15 @@
 xcuserdata/
 *.xcuserstate
 build/
+.build/
 DerivedData/
+android/.android-sdk/
+android/.gradle/
+android/.gradle-local/
+android/app/build/
+android/build/
+android/local.properties
+.swiftpm/
 Scripts/SeedBuilder/.seed-cache/
 Scripts/SeedBuilder/build-seed.log
 lichess-api-key.txt

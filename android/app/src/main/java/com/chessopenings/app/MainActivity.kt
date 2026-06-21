@@ -21,16 +21,20 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +62,7 @@ data class OpeningSummary(
     val eco: String,
     val side: String,
     val description: String?,
+    val isSeed: Boolean,
     val lines: List<LineSummary>,
 )
 
@@ -87,6 +92,23 @@ data class BoardSquare(
     val coordinate: String = "$file$rank"
 }
 
+enum class AppTab(
+    val title: String,
+    val subtitle: String,
+    val glyph: String,
+) {
+    Train(
+        title = "train",
+        subtitle = "choose a repertoire line to drill",
+        glyph = "T",
+    ),
+    Library(
+        title = "library",
+        subtitle = "seed openings and saved repertoires",
+        glyph = "L",
+    ),
+}
+
 fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
     val openings = JSONObject(jsonText).getJSONArray("openings")
     return List(openings.length()) { openingIndex ->
@@ -97,6 +119,7 @@ fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
             eco = opening.getString("eco").uppercase(),
             side = opening.getString("side"),
             description = opening.optStringOrNull("description"),
+            isSeed = opening.optBoolean("isSeed", true),
             lines = List(lines.length()) { lineIndex ->
                 val line = lines.getJSONObject(lineIndex)
                 val plies = line.getJSONArray("plies")
@@ -142,26 +165,67 @@ fun ChessOpeningsApp() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            OpeningCatalogue(openings)
+            ChessOpeningsHome(openings)
         }
     }
 }
 
 @Composable
-fun OpeningCatalogue(openings: List<OpeningSummary>) {
-    var selectedOpeningIndex by remember { mutableIntStateOf(0) }
-    var selectedLineIndex by remember { mutableIntStateOf(0) }
-    val selectedOpening = openings.getOrNull(selectedOpeningIndex)
-    val selectedLine = selectedOpening?.lines?.getOrNull(selectedLineIndex)
+fun ChessOpeningsHome(openings: List<OpeningSummary>) {
+    var selectedTab by remember { mutableStateOf(AppTab.Train) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .navigationBarsPadding()
+            .navigationBarsPadding(),
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            OpeningCatalogue(
+                openings = openings,
+                tab = selectedTab,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            AppTab.entries.forEach { tab ->
+                NavigationBarItem(
+                    selected = tab == selectedTab,
+                    onClick = { selectedTab = tab },
+                    icon = {
+                        Text(
+                            text = tab.glyph,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                    label = { Text(tab.title) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun OpeningCatalogue(
+    openings: List<OpeningSummary>,
+    tab: AppTab,
+    modifier: Modifier = Modifier,
+) {
+    var selectedOpeningIndex by remember { mutableIntStateOf(0) }
+    var selectedLineIndex by remember { mutableIntStateOf(0) }
+    val selectedOpening = openings.getOrNull(selectedOpeningIndex)
+    val selectedLine = selectedOpening?.lines?.getOrNull(selectedLineIndex)
+    val indexedOpenings = openings.mapIndexed { index, opening -> index to opening }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
             .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
-        CatalogueHeader(openings)
+        CatalogueHeader(tab = tab, openingCount = openings.size)
         Spacer(modifier = Modifier.height(12.dp))
 
         LazyColumn(
@@ -176,39 +240,87 @@ fun OpeningCatalogue(openings: List<OpeningSummary>) {
                     )
                 }
 
-                item {
-                    SectionHeader("Lines")
-                }
+                lineSection(
+                    title = "master games",
+                    lines = selectedOpening.lines.withIndex().filter { it.value.source == "masters" },
+                    selectedLineIndex = selectedLineIndex,
+                    onLineSelected = { selectedLineIndex = it },
+                )
 
-                itemsIndexed(selectedOpening.lines) { index, line ->
-                    LineRow(
-                        line = line,
-                        selected = index == selectedLineIndex,
-                        onClick = { selectedLineIndex = index },
+                lineSection(
+                    title = "online play (2200+)",
+                    lines = selectedOpening.lines.withIndex().filter { it.value.source == "open" },
+                    selectedLineIndex = selectedLineIndex,
+                    onLineSelected = { selectedLineIndex = it },
+                )
+            }
+
+            when (tab) {
+                AppTab.Train -> {
+                    openingSection(
+                        title = "as white",
+                        openings = indexedOpenings.filter { it.second.side == "white" },
+                        selectedOpeningIndex = selectedOpeningIndex,
+                        onOpeningSelected = { index ->
+                            selectedOpeningIndex = index
+                            selectedLineIndex = 0
+                        },
+                    )
+
+                    openingSection(
+                        title = "as black",
+                        openings = indexedOpenings.filter { it.second.side == "black" },
+                        selectedOpeningIndex = selectedOpeningIndex,
+                        onOpeningSelected = { index ->
+                            selectedOpeningIndex = index
+                            selectedLineIndex = 0
+                        },
                     )
                 }
-            }
 
-            item {
-                SectionHeader("Catalogue")
-            }
+                AppTab.Library -> {
+                    openingSection(
+                        title = "seed openings",
+                        openings = indexedOpenings.filter { it.second.isSeed },
+                        selectedOpeningIndex = selectedOpeningIndex,
+                        onOpeningSelected = { index ->
+                            selectedOpeningIndex = index
+                            selectedLineIndex = 0
+                        },
+                    )
 
-            itemsIndexed(openings) { index, opening ->
-                OpeningRow(
-                    opening = opening,
-                    selected = index == selectedOpeningIndex,
-                    onClick = {
-                        selectedOpeningIndex = index
-                        selectedLineIndex = 0
-                    },
-                )
+                    val customOpenings = indexedOpenings.filter { !it.second.isSeed }
+                    item {
+                        SectionHeader("yours")
+                    }
+                    if (customOpenings.isEmpty()) {
+                        item {
+                            EmptyRow("No custom openings yet")
+                        }
+                    } else {
+                        itemsIndexed(customOpenings) { _, indexedOpening ->
+                            val (index, opening) = indexedOpening
+                            OpeningRow(
+                                opening = opening,
+                                selected = index == selectedOpeningIndex,
+                                onClick = {
+                                    selectedOpeningIndex = index
+                                    selectedLineIndex = 0
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun CatalogueHeader(openings: List<OpeningSummary>) {
+fun CatalogueHeader(
+    tab: AppTab,
+    openingCount: Int,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -216,12 +328,12 @@ fun CatalogueHeader(openings: List<OpeningSummary>) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Chess Openings",
+                text = tab.title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "${openings.size} openings from the shared catalogue",
+                text = "$openingCount openings · ${tab.subtitle}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
             )
@@ -483,6 +595,66 @@ fun LineRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+private fun LazyListScope.lineSection(
+    title: String,
+    lines: List<IndexedValue<LineSummary>>,
+    selectedLineIndex: Int,
+    onLineSelected: (Int) -> Unit,
+) {
+    if (lines.isEmpty()) return
+
+    item {
+        SectionHeader(title)
+    }
+
+    itemsIndexed(lines) { _, indexedLine ->
+        LineRow(
+            line = indexedLine.value,
+            selected = indexedLine.index == selectedLineIndex,
+            onClick = { onLineSelected(indexedLine.index) },
+        )
+    }
+}
+
+private fun LazyListScope.openingSection(
+    title: String,
+    openings: List<Pair<Int, OpeningSummary>>,
+    selectedOpeningIndex: Int,
+    onOpeningSelected: (Int) -> Unit,
+) {
+    if (openings.isEmpty()) return
+
+    item {
+        SectionHeader(title)
+    }
+
+    itemsIndexed(openings) { _, indexedOpening ->
+        val (index, opening) = indexedOpening
+        OpeningRow(
+            opening = opening,
+            selected = index == selectedOpeningIndex,
+            onClick = { onOpeningSelected(index) },
+        )
+    }
+}
+
+@Composable
+fun EmptyRow(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+        )
     }
 }
 

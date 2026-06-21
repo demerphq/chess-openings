@@ -9,6 +9,7 @@ DerivedData/
 android/.android-sdk/
 android/.gradle/
 android/.gradle-local/
+android/.kotlin/
 android/app/build/
 android/build/
 android/local.properties

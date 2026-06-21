@@ -14,6 +14,7 @@ class OpeningParserTest {
                   "eco": "c50",
                   "side": "white",
                   "description": "Classical e-pawn development",
+                  "isSeed": true,
                   "lines": [
                     {
                       "name": "Bc5",
@@ -47,6 +48,7 @@ class OpeningParserTest {
         assertEquals("C50", openings[0].eco)
         assertEquals("white", openings[0].side)
         assertEquals("Classical e-pawn development", openings[0].description)
+        assertEquals(true, openings[0].isSeed)
         assertEquals(1, openings[0].lines.size)
         assertEquals("Bc5", openings[0].lines[0].name)
         assertEquals("masters", openings[0].lines[0].source)

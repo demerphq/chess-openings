@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val generatedAssetsDir = layout.buildDirectory.dir("generated/assets/main").get().asFile
+
 android {
     namespace = "com.chessopenings.app"
     compileSdk = 36
@@ -20,6 +22,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets["main"].assets.srcDir(generatedAssetsDir)
+}
+
+val syncSharedSeedAssets = tasks.register<Sync>("syncSharedSeedAssets") {
+    from(rootProject.file("../Chess Openings/Resources/openings.json"))
+    into(generatedAssetsDir)
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncSharedSeedAssets)
 }
 
 dependencies {
@@ -32,6 +45,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20260522")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }

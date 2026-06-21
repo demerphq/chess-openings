@@ -96,10 +96,19 @@ class OpeningParserTest {
             .map { it.coordinate }
 
         assertEquals(listOf("e4", "e2"), highlighted)
-        assertEquals("R", startingPieceAt('a', 1))
-        assertEquals("k", startingPieceAt('e', 8))
-        assertEquals("P", startingPieceAt('e', 2))
+        assertEquals("wr", startingPieceAt('a', 1))
+        assertEquals("bk", startingPieceAt('e', 8))
+        assertEquals("wp", startingPieceAt('e', 2))
         assertEquals("", startingPieceAt('e', 4))
         assertEquals(emptySet<String>(), highlightedSquaresForUci("castle"))
+    }
+
+    @Test
+    fun mapsPieceCodesToDrawableResourcesAndDescriptions() {
+        assertEquals(R.drawable.wp, pieceResourceId("wp"))
+        assertEquals(R.drawable.bk, pieceResourceId("bk"))
+        assertEquals(null, pieceResourceId(""))
+        assertEquals("white pawn", pieceDescription("wp"))
+        assertEquals("black king", pieceDescription("bk"))
     }
 }

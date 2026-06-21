@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,7 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,7 +89,7 @@ data class PlySummary(
 data class BoardSquare(
     val file: Char,
     val rank: Int,
-    val piece: String,
+    val pieceCode: String,
     val highlighted: Boolean,
 ) {
     val coordinate: String = "$file$rank"
@@ -486,14 +489,15 @@ fun BoardSquareCell(
                 modifier = Modifier.align(Alignment.BottomEnd),
             )
         }
-        if (square.piece.isNotEmpty()) {
-            Text(
-                text = square.piece,
-                style = MaterialTheme.typography.titleLarge,
-                color = if (square.piece.first().isUpperCase()) Color(0xFFFFFBF4) else Color(0xFF221C18),
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.Center),
+        pieceResourceId(square.pieceCode)?.let { resourceId ->
+            Image(
+                painter = painterResource(resourceId),
+                contentDescription = pieceDescription(square.pieceCode),
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxSize()
+                    .padding(2.dp),
             )
         }
     }
@@ -694,7 +698,7 @@ fun startingBoardSquares(highlightedMove: String): List<BoardSquare> {
             BoardSquare(
                 file = file,
                 rank = rank,
-                piece = startingPieceAt(file, rank),
+                pieceCode = startingPieceAt(file, rank),
                 highlighted = coordinate in highlightedSquares,
             )
         }
@@ -703,11 +707,45 @@ fun startingBoardSquares(highlightedMove: String): List<BoardSquare> {
 
 fun startingPieceAt(file: Char, rank: Int): String =
     when (rank) {
-        8 -> "rnbqkbnr"[file - 'a'].toString()
-        7 -> "p"
-        2 -> "P"
-        1 -> "RNBQKBNR"[file - 'a'].toString()
+        8 -> "b${"rnbqkbnr"[file - 'a']}"
+        7 -> "bp"
+        2 -> "wp"
+        1 -> "w${"rnbqkbnr"[file - 'a']}"
         else -> ""
+    }
+
+fun pieceResourceId(pieceCode: String): Int? =
+    when (pieceCode) {
+        "bp" -> R.drawable.bp
+        "bn" -> R.drawable.bn
+        "bb" -> R.drawable.bb
+        "br" -> R.drawable.br
+        "bq" -> R.drawable.bq
+        "bk" -> R.drawable.bk
+        "wp" -> R.drawable.wp
+        "wn" -> R.drawable.wn
+        "wb" -> R.drawable.wb
+        "wr" -> R.drawable.wr
+        "wq" -> R.drawable.wq
+        "wk" -> R.drawable.wk
+        else -> null
+    }
+
+fun pieceDescription(pieceCode: String): String? =
+    when (pieceCode) {
+        "bp" -> "black pawn"
+        "bn" -> "black knight"
+        "bb" -> "black bishop"
+        "br" -> "black rook"
+        "bq" -> "black queen"
+        "bk" -> "black king"
+        "wp" -> "white pawn"
+        "wn" -> "white knight"
+        "wb" -> "white bishop"
+        "wr" -> "white rook"
+        "wq" -> "white queen"
+        "wk" -> "white king"
+        else -> null
     }
 
 fun highlightedSquaresForUci(uci: String): Set<String> {

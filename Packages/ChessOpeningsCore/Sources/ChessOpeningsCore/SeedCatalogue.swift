@@ -32,7 +32,7 @@ public struct SeedCatalogue: Codable, Equatable, Sendable {
 
 public struct Opening: Codable, Equatable, Sendable {
     public let name: String
-    public let eco: String
+    public let eco: String?
     public let side: OpeningSide
     public let rootFen: String
     public let description: String?
@@ -41,7 +41,7 @@ public struct Opening: Codable, Equatable, Sendable {
 
     public init(
         name: String,
-        eco: String,
+        eco: String?,
         side: OpeningSide,
         rootFen: String,
         description: String?,
@@ -79,11 +79,23 @@ public struct Line: Codable, Equatable, Sendable {
     public let tags: [String]
     public let plies: [BookPly]
 
+    private enum CodingKeys: String, CodingKey {
+        case name, source, tags, plies
+    }
+
     public init(name: String, source: LineSource, tags: [String], plies: [BookPly]) {
         self.name = name
         self.source = source
         self.tags = tags
         self.plies = plies
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        source = try container.decodeIfPresent(LineSource.self, forKey: .source) ?? .masters
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        plies = try container.decode([BookPly].self, forKey: .plies)
     }
 
     public var summary: LineSummary {
@@ -133,7 +145,7 @@ public enum LineSource: String, Codable, Equatable, Sendable, CaseIterable {
 
 public struct OpeningSummary: Codable, Equatable, Sendable {
     public let name: String
-    public let eco: String
+    public let eco: String?
     public let side: OpeningSide
     public let description: String?
     public let lineCount: Int
@@ -141,7 +153,7 @@ public struct OpeningSummary: Codable, Equatable, Sendable {
 
     public init(
         name: String,
-        eco: String,
+        eco: String?,
         side: OpeningSide,
         description: String?,
         lineCount: Int,

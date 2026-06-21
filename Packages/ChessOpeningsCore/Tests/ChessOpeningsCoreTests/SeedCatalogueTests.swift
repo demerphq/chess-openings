@@ -86,6 +86,45 @@ private let fixtureJSON = """
     #expect(lineSummary.moveText == "1. e4 e5 2. Nf3")
 }
 
+@Test func decodesLinesWithMissingOptionalMetadata() throws {
+    let json = """
+    {
+      "version": 1,
+      "openings": [
+        {
+          "name": "custom",
+          "eco": null,
+          "side": "black",
+          "rootFen": "startpos",
+          "description": null,
+          "isSeed": true,
+          "lines": [
+            {
+              "name": "Line",
+              "plies": [
+                {
+                  "san": "e4",
+                  "uci": "e2e4",
+                  "annotation": null,
+                  "alternativeSans": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    """
+
+    let catalogue = try SeedCatalogue.decode(from: json)
+    let opening = try #require(catalogue.openings.first)
+    let line = try #require(opening.lines.first)
+
+    #expect(opening.eco == nil)
+    #expect(line.source == .masters)
+    #expect(line.tags.isEmpty)
+}
+
 @Test func decodesGeneratedSeedResource() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageDirectory = testFile

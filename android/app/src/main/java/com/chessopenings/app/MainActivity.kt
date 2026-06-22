@@ -958,21 +958,39 @@ fun applyUciMove(
     val to = uci.substring(2, 4)
     if (!from.isBoardCoordinate() || !to.isBoardCoordinate()) return
 
-    val movedPiece = pieces.remove(from) ?: return
+    val movedPiece = pieces[from] ?: return
+    castlingSquares(movedPiece, from, to)?.let { castle ->
+        pieces.remove(from)
+        val rookPiece = pieces.remove(castle.rookFrom)
+        pieces[castle.kingTo] = movedPiece
+        if (rookPiece != null) {
+            pieces[castle.rookTo] = rookPiece
+        }
+        return
+    }
+
+    pieces.remove(from)
     pieces[to] = promotedPieceCode(movedPiece, uci.getOrNull(4)) ?: movedPiece
-    applyCastlingRookMove(pieces, from, to)
 }
 
-private fun applyCastlingRookMove(
-    pieces: MutableMap<String, String>,
+data class CastlingSquares(
+    val kingTo: String,
+    val rookFrom: String,
+    val rookTo: String,
+)
+
+fun castlingSquares(
+    movedPiece: String,
     from: String,
     to: String,
-) {
-    when ("$from$to") {
-        "e1g1" -> pieces["f1"] = pieces.remove("h1") ?: return
-        "e1c1" -> pieces["d1"] = pieces.remove("a1") ?: return
-        "e8g8" -> pieces["f8"] = pieces.remove("h8") ?: return
-        "e8c8" -> pieces["d8"] = pieces.remove("a8") ?: return
+): CastlingSquares? {
+    if (movedPiece.length < 2 || movedPiece[1] != 'k') return null
+    return when ("$from$to") {
+        "e1g1", "e1h1" -> CastlingSquares(kingTo = "g1", rookFrom = "h1", rookTo = "f1")
+        "e1c1", "e1a1" -> CastlingSquares(kingTo = "c1", rookFrom = "a1", rookTo = "d1")
+        "e8g8", "e8h8" -> CastlingSquares(kingTo = "g8", rookFrom = "h8", rookTo = "f8")
+        "e8c8", "e8a8" -> CastlingSquares(kingTo = "c8", rookFrom = "a8", rookTo = "d8")
+        else -> null
     }
 }
 

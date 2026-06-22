@@ -142,7 +142,7 @@ class OpeningParserTest {
     }
 
     @Test
-    fun appliesCastlingRookMoveForBoardPlayback() {
+    fun appliesStandardCastlingMoveForBoardPlayback() {
         val pieces = startingPieceMap().toMutableMap()
 
         applyUciMove(pieces, "e1g1")
@@ -151,6 +151,20 @@ class OpeningParserTest {
         assertEquals("wr", pieces["f1"])
         assertEquals(null, pieces["e1"])
         assertEquals(null, pieces["h1"])
+    }
+
+    @Test
+    fun appliesChessKitCastlingMoveForBoardPlayback() {
+        val pieces = startingPieceMap().toMutableMap()
+
+        applyUciMove(pieces, "e1h1")
+
+        assertEquals("wk", pieces["g1"])
+        assertEquals("wr", pieces["f1"])
+        assertEquals(null, pieces["e1"])
+        assertEquals(null, pieces["h1"])
+        assertEquals(CastlingSquares(kingTo = "c8", rookFrom = "a8", rookTo = "d8"), castlingSquares("bk", "e8", "a8"))
+        assertEquals(null, castlingSquares("wq", "e1", "h1"))
     }
 
     @Test

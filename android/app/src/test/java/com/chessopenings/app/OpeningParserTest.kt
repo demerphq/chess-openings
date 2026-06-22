@@ -142,4 +142,16 @@ class OpeningParserTest {
         assertEquals("white pawn", pieceDescription("wp"))
         assertEquals("black king", pieceDescription("bk"))
     }
+
+    @Test
+    fun matchesTappedSquaresAgainstExpectedMove() {
+        assertEquals(true, sameMoveSquares("e2e4", "e2e4"))
+        assertEquals(true, sameMoveSquares("a7a8", "a7a8q"))
+        assertEquals(false, sameMoveSquares("d2d4", "e2e4"))
+        assertEquals(false, sameMoveSquares("e2", "e2e4"))
+
+        val next = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
+        assertEquals("Try again · expected e4", expectedMoveFeedback(next))
+        assertEquals("Line complete", expectedMoveFeedback(null))
+    }
 }

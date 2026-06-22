@@ -452,8 +452,11 @@ fun DrillScreen(
     onBack: () -> Unit,
 ) {
     var currentPlyCount by remember(line) { mutableIntStateOf(0) }
+    var selectedSquare by remember(line) { mutableStateOf<String?>(null) }
+    var feedback by remember(line) { mutableStateOf<String?>(null) }
     val visiblePlies = line.plies.take(currentPlyCount)
     val board = remember(line, currentPlyCount) { boardSquaresAfterPlies(visiblePlies) }
+    val nextPly = line.plies.getOrNull(currentPlyCount)
 
     Column(
         modifier = Modifier
@@ -493,14 +496,36 @@ fun DrillScreen(
 
         BoardGrid(
             board = board,
+            selectedCoordinate = selectedSquare,
+            onSquareClick = { coordinate ->
+                val selected = selectedSquare
+                if (selected == null) {
+                    selectedSquare = coordinate
+                    feedback = null
+                } else {
+                    val playedUci = "$selected$coordinate"
+                    if (nextPly != null && sameMoveSquares(playedUci, nextPly.uci)) {
+                        currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size)
+                        selectedSquare = null
+                        feedback = null
+                    } else {
+                        selectedSquare = coordinate
+                        feedback = expectedMoveFeedback(nextPly)
+                    }
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
 
         Text(
-            text = drillProgressLabel(currentPlyCount, line),
+            text = feedback ?: drillProgressLabel(currentPlyCount, line),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+            color = if (feedback == null) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+            } else {
+                MaterialTheme.colorScheme.secondary
+            },
         )
 
         Text(
@@ -516,21 +541,33 @@ fun DrillScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             TextButton(
-                onClick = { currentPlyCount = 0 },
+                onClick = {
+                    currentPlyCount = 0
+                    selectedSquare = null
+                    feedback = null
+                },
                 enabled = currentPlyCount > 0,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("reset")
             }
             TextButton(
-                onClick = { currentPlyCount = (currentPlyCount - 1).coerceAtLeast(0) },
+                onClick = {
+                    currentPlyCount = (currentPlyCount - 1).coerceAtLeast(0)
+                    selectedSquare = null
+                    feedback = null
+                },
                 enabled = currentPlyCount > 0,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("previous")
             }
             Button(
-                onClick = { currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size) },
+                onClick = {
+                    currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size)
+                    selectedSquare = null
+                    feedback = null
+                },
                 enabled = currentPlyCount < line.plies.size,
                 modifier = Modifier.weight(1f),
             ) {
@@ -567,6 +604,8 @@ fun BoardPreview(
 fun BoardGrid(
     board: List<BoardSquare>,
     modifier: Modifier = Modifier,
+    selectedCoordinate: String? = null,
+    onSquareClick: ((String) -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier
@@ -582,6 +621,8 @@ fun BoardGrid(
                         BoardSquareCell(
                             square = square,
                             dark = ((square.rank + index) % 2 == 0),
+                            selected = square.coordinate == selectedCoordinate,
+                            onClick = onSquareClick,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -595,15 +636,24 @@ fun BoardGrid(
 fun BoardSquareCell(
     square: BoardSquare,
     dark: Boolean,
+    selected: Boolean = false,
+    onClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val baseColor = if (dark) Color(0xFF9D7A55) else Color(0xFFE9D7B9)
-    val background = if (square.highlighted) Color(0xFFB9C86B) else baseColor
+    val background = when {
+        selected -> Color(0xFF6EA4B8)
+        square.highlighted -> Color(0xFFB9C86B)
+        else -> baseColor
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(background)
+            .then(
+                if (onClick == null) Modifier else Modifier.clickable { onClick(square.coordinate) }
+            )
             .padding(3.dp),
     ) {
         if (square.file == 'a') {
@@ -924,6 +974,14 @@ fun drillProgressLabel(currentPlyCount: Int, line: LineSummary): String {
         "Move ${currentPlyCount + 1} of ${line.plies.size} · next ${next.san}"
     }
 }
+
+fun sameMoveSquares(playedUci: String, expectedUci: String): Boolean =
+    playedUci.length >= 4 &&
+        expectedUci.length >= 4 &&
+        playedUci.take(4) == expectedUci.take(4)
+
+fun expectedMoveFeedback(nextPly: PlySummary?): String =
+    nextPly?.let { "Try again · expected ${it.san}" } ?: "Line complete"
 
 private fun promotedPieceCode(pieceCode: String, promotion: Char?): String? {
     if (pieceCode.isBlank() || promotion == null) return null

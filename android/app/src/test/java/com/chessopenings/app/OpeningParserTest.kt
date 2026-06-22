@@ -123,6 +123,25 @@ class OpeningParserTest {
     }
 
     @Test
+    fun orientsDisplayedBoardByRepertoireSide() {
+        val board = boardSquaresAfterPlies(emptyList())
+
+        assertEquals("a8", displayedBoardSquares(board, "white").first().coordinate)
+        assertEquals("h1", displayedBoardSquares(board, "white").last().coordinate)
+        assertEquals("h1", displayedBoardSquares(board, "black").first().coordinate)
+        assertEquals("a8", displayedBoardSquares(board, "black").last().coordinate)
+        assertEquals("h1", displayedBoardSquares(board, "BLACK").first().coordinate)
+    }
+
+    @Test
+    fun identifiesDarkBoardSquares() {
+        assertEquals(true, isDarkBoardSquare('a', 1))
+        assertEquals(false, isDarkBoardSquare('h', 1))
+        assertEquals(false, isDarkBoardSquare('a', 8))
+        assertEquals(true, isDarkBoardSquare('h', 8))
+    }
+
+    @Test
     fun appliesCastlingRookMoveForBoardPlayback() {
         val pieces = startingPieceMap().toMutableMap()
 

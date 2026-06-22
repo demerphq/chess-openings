@@ -399,6 +399,7 @@ fun SelectedLineDetail(
 
             BoardPreview(
                 line = line,
+                orientationSide = opening.side,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -496,6 +497,7 @@ fun DrillScreen(
 
         BoardGrid(
             board = board,
+            orientationSide = opening.side,
             selectedCoordinate = selectedSquare,
             onSquareClick = { coordinate ->
                 val selected = selectedSquare
@@ -582,6 +584,7 @@ fun DrillScreen(
 @Composable
 fun BoardPreview(
     line: LineSummary,
+    orientationSide: String,
     modifier: Modifier = Modifier,
 ) {
     val highlightedMove = line.plies.firstOrNull()?.uci.orEmpty()
@@ -591,7 +594,11 @@ fun BoardPreview(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        BoardGrid(board = board, modifier = Modifier.fillMaxWidth())
+        BoardGrid(
+            board = board,
+            orientationSide = orientationSide,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Text(
             text = "Start position · previewing ${firstMoveLabel(line)}",
             style = MaterialTheme.typography.labelMedium,
@@ -604,9 +611,13 @@ fun BoardPreview(
 fun BoardGrid(
     board: List<BoardSquare>,
     modifier: Modifier = Modifier,
+    orientationSide: String = "white",
     selectedCoordinate: String? = null,
     onSquareClick: ((String) -> Unit)? = null,
 ) {
+    val displayedSquares = remember(board, orientationSide) {
+        displayedBoardSquares(board, orientationSide)
+    }
     Surface(
         modifier = modifier
             .aspectRatio(1f)
@@ -615,12 +626,13 @@ fun BoardGrid(
         color = Color(0xFFEEE2D2),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            board.chunked(8).forEach { rankSquares ->
+            displayedSquares.chunked(8).forEach { rankSquares ->
                 Row(modifier = Modifier.weight(1f)) {
                     rankSquares.forEachIndexed { index, square ->
                         BoardSquareCell(
                             square = square,
-                            dark = ((square.rank + index) % 2 == 0),
+                            dark = isDarkBoardSquare(square.file, square.rank),
+                            orientationSide = orientationSide,
                             selected = square.coordinate == selectedCoordinate,
                             onClick = onSquareClick,
                             modifier = Modifier.weight(1f),
@@ -636,6 +648,7 @@ fun BoardGrid(
 fun BoardSquareCell(
     square: BoardSquare,
     dark: Boolean,
+    orientationSide: String = "white",
     selected: Boolean = false,
     onClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -656,7 +669,7 @@ fun BoardSquareCell(
             )
             .padding(3.dp),
     ) {
-        if (square.file == 'a') {
+        if (square.file == rankLabelFile(orientationSide)) {
             Text(
                 text = square.rank.toString(),
                 style = MaterialTheme.typography.labelSmall,
@@ -664,7 +677,7 @@ fun BoardSquareCell(
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
-        if (square.rank == 1) {
+        if (square.rank == fileLabelRank(orientationSide)) {
             Text(
                 text = square.file.toString(),
                 style = MaterialTheme.typography.labelSmall,
@@ -887,6 +900,26 @@ fun boardSquaresAfterPlies(plies: List<PlySummary>): List<BoardSquare> {
     return boardSquaresFromPieces(pieces, highlightedSquares)
 }
 
+fun displayedBoardSquares(
+    board: List<BoardSquare>,
+    orientationSide: String,
+): List<BoardSquare> {
+    val squaresByCoordinate = board.associateBy { it.coordinate }
+    val ranks = if (orientationSide.isBlackSide()) (1..8) else (8 downTo 1)
+    val files = if (orientationSide.isBlackSide()) ('h' downTo 'a') else ('a'..'h')
+
+    return ranks.flatMap { rank ->
+        files.mapNotNull { file ->
+            squaresByCoordinate["$file$rank"]
+        }
+    }
+}
+
+fun isDarkBoardSquare(file: Char, rank: Int): Boolean {
+    val fileNumber = file - 'a' + 1
+    return (fileNumber + rank) % 2 == 0
+}
+
 private fun boardSquaresFromPieces(
     pieces: Map<String, String>,
     highlightedSquares: Set<String>,
@@ -1080,6 +1113,15 @@ fun String.toDisplayName(): String =
 
 private fun String.isBoardCoordinate(): Boolean =
     length == 2 && this[0] in 'a'..'h' && this[1] in '1'..'8'
+
+private fun String.isBlackSide(): Boolean =
+    equals("black", ignoreCase = true)
+
+private fun rankLabelFile(orientationSide: String): Char =
+    if (orientationSide.isBlackSide()) 'h' else 'a'
+
+private fun fileLabelRank(orientationSide: String): Int =
+    if (orientationSide.isBlackSide()) 8 else 1
 
 private fun JSONObject.optStringOrNull(name: String): String? =
     if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }

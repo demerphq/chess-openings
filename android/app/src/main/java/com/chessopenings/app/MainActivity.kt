@@ -1,6 +1,7 @@
 package com.chessopenings.app
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -191,6 +192,7 @@ fun ChessOpeningsApp() {
 fun ChessOpeningsHome(openings: List<OpeningSummary>) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
     var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
+    var detailOpening by remember { mutableStateOf<OpeningSummary?>(null) }
 
     drillSelection?.let { selection ->
         DrillScreen(
@@ -201,6 +203,10 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
         return
     }
 
+    detailOpening?.let {
+        BackHandler { detailOpening = null }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -208,14 +214,24 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
             .navigationBarsPadding(),
     ) {
         Box(modifier = Modifier.weight(1f)) {
-            OpeningCatalogue(
-                openings = openings,
-                tab = selectedTab,
-                onStartDrill = { opening, line ->
-                    drillSelection = DrillSelection(opening, line)
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+            val opening = detailOpening
+            if (opening == null) {
+                OpeningCatalogue(
+                    openings = openings,
+                    tab = selectedTab,
+                    onOpeningSelected = { detailOpening = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                OpeningDetailScreen(
+                    opening = opening,
+                    onBack = { detailOpening = null },
+                    onStartDrill = { line ->
+                        drillSelection = DrillSelection(opening, line)
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         NavigationBar(
             containerColor = MaterialTheme.colorScheme.surface,
@@ -223,7 +239,10 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
             AppTab.entries.forEach { tab ->
                 NavigationBarItem(
                     selected = tab == selectedTab,
-                    onClick = { selectedTab = tab },
+                    onClick = {
+                        selectedTab = tab
+                        detailOpening = null
+                    },
                     icon = {
                         Text(
                             text = tab.glyph,
@@ -242,13 +261,9 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
 fun OpeningCatalogue(
     openings: List<OpeningSummary>,
     tab: AppTab,
-    onStartDrill: (OpeningSummary, LineSummary) -> Unit,
+    onOpeningSelected: (OpeningSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedOpeningIndex by remember { mutableIntStateOf(0) }
-    var selectedLineIndex by remember { mutableIntStateOf(0) }
-    val selectedOpening = openings.getOrNull(selectedOpeningIndex)
-    val selectedLine = selectedOpening?.lines?.getOrNull(selectedLineIndex)
     val indexedOpenings = openings.mapIndexed { index, opening -> index to opening }
 
     Column(
@@ -263,50 +278,18 @@ fun OpeningCatalogue(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (selectedOpening != null && selectedLine != null) {
-                item {
-                    SelectedLineDetail(
-                        opening = selectedOpening,
-                        line = selectedLine,
-                        onStartDrill = { onStartDrill(selectedOpening, selectedLine) },
-                    )
-                }
-
-                lineSection(
-                    title = "master games",
-                    lines = selectedOpening.lines.withIndex().filter { it.value.source == "masters" },
-                    selectedLineIndex = selectedLineIndex,
-                    onLineSelected = { selectedLineIndex = it },
-                )
-
-                lineSection(
-                    title = "online play (2200+)",
-                    lines = selectedOpening.lines.withIndex().filter { it.value.source == "open" },
-                    selectedLineIndex = selectedLineIndex,
-                    onLineSelected = { selectedLineIndex = it },
-                )
-            }
-
             when (tab) {
                 AppTab.Train -> {
                     openingSection(
                         title = "as white",
                         openings = indexedOpenings.filter { it.second.side == "white" },
-                        selectedOpeningIndex = selectedOpeningIndex,
-                        onOpeningSelected = { index ->
-                            selectedOpeningIndex = index
-                            selectedLineIndex = 0
-                        },
+                        onOpeningSelected = onOpeningSelected,
                     )
 
                     openingSection(
                         title = "as black",
                         openings = indexedOpenings.filter { it.second.side == "black" },
-                        selectedOpeningIndex = selectedOpeningIndex,
-                        onOpeningSelected = { index ->
-                            selectedOpeningIndex = index
-                            selectedLineIndex = 0
-                        },
+                        onOpeningSelected = onOpeningSelected,
                     )
                 }
 
@@ -314,11 +297,7 @@ fun OpeningCatalogue(
                     openingSection(
                         title = "seed openings",
                         openings = indexedOpenings.filter { it.second.isSeed },
-                        selectedOpeningIndex = selectedOpeningIndex,
-                        onOpeningSelected = { index ->
-                            selectedOpeningIndex = index
-                            selectedLineIndex = 0
-                        },
+                        onOpeningSelected = onOpeningSelected,
                     )
 
                     val customOpenings = indexedOpenings.filter { !it.second.isSeed }
@@ -331,14 +310,10 @@ fun OpeningCatalogue(
                         }
                     } else {
                         itemsIndexed(customOpenings) { _, indexedOpening ->
-                            val (index, opening) = indexedOpening
+                            val (_, opening) = indexedOpening
                             OpeningRow(
                                 opening = opening,
-                                selected = index == selectedOpeningIndex,
-                                onClick = {
-                                    selectedOpeningIndex = index
-                                    selectedLineIndex = 0
-                                },
+                                onClick = { onOpeningSelected(opening) },
                             )
                         }
                     }
@@ -374,82 +349,82 @@ fun CatalogueHeader(
 }
 
 @Composable
-fun SelectedLineDetail(
+fun OpeningDetailScreen(
     opening: OpeningSummary,
-    line: LineSummary,
-    onStartDrill: () -> Unit,
+    onBack: () -> Unit,
+    onStartDrill: (LineSummary) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack) {
+                    Text("back")
+                }
+                Button(
+                    onClick = { opening.lines.firstOrNull()?.let(onStartDrill) },
+                    enabled = opening.lines.isNotEmpty(),
+                ) {
+                    Text("drill all")
+                }
+            }
+        }
+
+        item {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = opening.name.toDisplayName(),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${opening.eco} · ${opening.side.toDisplayName()} repertoire · ${lineDepthLabel(line)}",
+                    text = "${opening.eco} · ${opening.side.toDisplayName()} repertoire · ${opening.lines.size} lines",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 )
             }
+        }
 
-            BoardPreview(
-                line = line,
-                orientationSide = opening.side,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
+        opening.description?.takeIf { it.isNotBlank() }?.let { description ->
+            item {
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     Text(
-                        text = line.name.toDisplayName(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                        modifier = Modifier.padding(12.dp),
                     )
-                    SourcePill(source = line.source)
-                }
-                Text(
-                    text = formatSanLine(line.plies, maxPlies = 18),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                line.tags.takeIf { it.isNotEmpty() }?.let { tags ->
-                    Text(
-                        text = tags.joinToString(" · ") { it.toDisplayName() },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Button(
-                    onClick = onStartDrill,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("drill")
                 }
             }
         }
+
+        detailLineSection(
+            title = "master games",
+            lines = opening.lines.filter { it.source == "masters" },
+            onStartDrill = onStartDrill,
+        )
+
+        detailLineSection(
+            title = "online play (2200+)",
+            lines = opening.lines.filter { it.source == "open" },
+            onStartDrill = onStartDrill,
+        )
     }
 }
 
@@ -801,7 +776,6 @@ fun BoardSquareCell(
 @Composable
 fun OpeningRow(
     opening: OpeningSummary,
-    selected: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -809,11 +783,8 @@ fun OpeningRow(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        color = if (selected) Color(0xFFE7F0EE) else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        ),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
@@ -828,7 +799,7 @@ fun OpeningRow(
                     text = opening.name.toDisplayName(),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -852,7 +823,6 @@ fun OpeningRow(
 @Composable
 fun LineRow(
     line: LineSummary,
-    selected: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -860,11 +830,8 @@ fun LineRow(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        color = if (selected) Color(0xFFFFF6E3) else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant,
-        ),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -897,11 +864,10 @@ fun LineRow(
     }
 }
 
-private fun LazyListScope.lineSection(
+private fun LazyListScope.detailLineSection(
     title: String,
-    lines: List<IndexedValue<LineSummary>>,
-    selectedLineIndex: Int,
-    onLineSelected: (Int) -> Unit,
+    lines: List<LineSummary>,
+    onStartDrill: (LineSummary) -> Unit,
 ) {
     if (lines.isEmpty()) return
 
@@ -909,11 +875,10 @@ private fun LazyListScope.lineSection(
         SectionHeader(title)
     }
 
-    itemsIndexed(lines) { _, indexedLine ->
+    itemsIndexed(lines) { _, line ->
         LineRow(
-            line = indexedLine.value,
-            selected = indexedLine.index == selectedLineIndex,
-            onClick = { onLineSelected(indexedLine.index) },
+            line = line,
+            onClick = { onStartDrill(line) },
         )
     }
 }
@@ -921,8 +886,7 @@ private fun LazyListScope.lineSection(
 private fun LazyListScope.openingSection(
     title: String,
     openings: List<Pair<Int, OpeningSummary>>,
-    selectedOpeningIndex: Int,
-    onOpeningSelected: (Int) -> Unit,
+    onOpeningSelected: (OpeningSummary) -> Unit,
 ) {
     if (openings.isEmpty()) return
 
@@ -931,11 +895,10 @@ private fun LazyListScope.openingSection(
     }
 
     itemsIndexed(openings) { _, indexedOpening ->
-        val (index, opening) = indexedOpening
+        val (_, opening) = indexedOpening
         OpeningRow(
             opening = opening,
-            selected = index == selectedOpeningIndex,
-            onClick = { onOpeningSelected(index) },
+            onClick = { onOpeningSelected(opening) },
         )
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -458,11 +460,27 @@ fun DrillScreen(
     var feedback by remember(line) { mutableStateOf<String?>(null) }
     var hintShown by remember(line) { mutableStateOf(false) }
     var solutionShown by remember(line) { mutableStateOf(false) }
+    var showLineIsPlaying by remember(line) { mutableStateOf(false) }
     val visiblePlies = line.plies.take(currentPlyCount)
     val board = remember(line, currentPlyCount) { boardSquaresAfterPlies(visiblePlies) }
     val nextPly = line.plies.getOrNull(currentPlyCount)
     val hintCoordinate = if (hintShown && !solutionShown) nextPly?.fromCoordinate() else null
     val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
+
+    LaunchedEffect(showLineIsPlaying, line) {
+        if (!showLineIsPlaying) return@LaunchedEffect
+        while (showLineIsPlaying && currentPlyCount < line.plies.size) {
+            delay(1_000)
+            currentPlyCount = showLineNextPlyCount(currentPlyCount, line)
+            selectedSquare = null
+            feedback = null
+            hintShown = false
+            solutionShown = false
+        }
+        if (currentPlyCount >= line.plies.size) {
+            showLineIsPlaying = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -523,11 +541,13 @@ fun DrillScreen(
                         feedback = null
                         hintShown = false
                         solutionShown = false
+                        showLineIsPlaying = false
                     } else {
                         selectedSquare = coordinate
                         feedback = expectedMoveFeedback(nextPly)
                         solutionShown = true
                         hintShown = false
+                        showLineIsPlaying = false
                     }
                 }
             },
@@ -590,6 +610,7 @@ fun DrillScreen(
                     feedback = null
                     hintShown = false
                     solutionShown = false
+                    showLineIsPlaying = false
                 },
                 enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
@@ -603,6 +624,7 @@ fun DrillScreen(
                     feedback = null
                     hintShown = false
                     solutionShown = false
+                    showLineIsPlaying = false
                 },
                 enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
@@ -616,12 +638,29 @@ fun DrillScreen(
                     feedback = null
                     hintShown = false
                     solutionShown = false
+                    showLineIsPlaying = false
                 },
                 enabled = currentPlyCount < line.plies.size,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("next")
             }
+        }
+
+        TextButton(
+            onClick = {
+                showLineIsPlaying = !showLineIsPlaying
+                if (showLineIsPlaying) {
+                    selectedSquare = null
+                    feedback = null
+                    hintShown = false
+                    solutionShown = false
+                }
+            },
+            enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (showLineIsPlaying) "pause" else "show line")
         }
 
         Spacer(modifier = Modifier.weight(1f))
@@ -1103,6 +1142,12 @@ fun advancedDrillPlyCountAfterUserMove(
     line: LineSummary,
 ): Int =
     (currentPlyCount + 2).coerceAtMost(line.plies.size)
+
+fun showLineNextPlyCount(
+    currentPlyCount: Int,
+    line: LineSummary,
+): Int =
+    (currentPlyCount + 1).coerceAtMost(line.plies.size)
 
 fun canStartDrillMove(
     coordinate: String,

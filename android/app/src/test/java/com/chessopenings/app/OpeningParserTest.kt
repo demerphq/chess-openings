@@ -198,6 +198,9 @@ class OpeningParserTest {
         assertEquals(1, initialDrillPlyCount(blackOpening, line))
         assertEquals(2, advancedDrillPlyCountAfterUserMove(0, line))
         assertEquals(3, advancedDrillPlyCountAfterUserMove(1, line))
+        assertEquals(1, showLineNextPlyCount(0, line))
+        assertEquals(3, showLineNextPlyCount(2, line))
+        assertEquals(3, showLineNextPlyCount(3, line))
     }
 
     @Test

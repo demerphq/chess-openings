@@ -283,12 +283,14 @@ fun OpeningCatalogue(
                     openingSection(
                         title = "as white",
                         openings = indexedOpenings.filter { it.second.side == "white" },
+                        showProgress = true,
                         onOpeningSelected = onOpeningSelected,
                     )
 
                     openingSection(
                         title = "as black",
                         openings = indexedOpenings.filter { it.second.side == "black" },
+                        showProgress = true,
                         onOpeningSelected = onOpeningSelected,
                     )
                 }
@@ -297,6 +299,7 @@ fun OpeningCatalogue(
                     openingSection(
                         title = "seed openings",
                         openings = indexedOpenings.filter { it.second.isSeed },
+                        showProgress = false,
                         onOpeningSelected = onOpeningSelected,
                     )
 
@@ -313,6 +316,7 @@ fun OpeningCatalogue(
                             val (_, opening) = indexedOpening
                             OpeningRow(
                                 opening = opening,
+                                showProgress = false,
                                 onClick = { onOpeningSelected(opening) },
                             )
                         }
@@ -776,8 +780,10 @@ fun BoardSquareCell(
 @Composable
 fun OpeningRow(
     opening: OpeningSummary,
+    showProgress: Boolean,
     onClick: () -> Unit,
 ) {
+    val learned = 0
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -804,18 +810,33 @@ fun OpeningRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${opening.eco} · ${opening.side.toDisplayName()} · ${opening.lines.size} lines",
+                    text = if (showProgress) {
+                        "$learned/${opening.lines.size} lines learned"
+                    } else {
+                        "${opening.lines.size} lines · ${opening.side.toDisplayName()}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 )
             }
-            Text(
-                text = opening.lines.size.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(start = 16.dp),
-            )
+            ) {
+                Text(
+                    text = opening.eco,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                )
+                if (showProgress) {
+                    ProgressBar(
+                        current = learned,
+                        total = opening.lines.size,
+                        modifier = Modifier.width(60.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -825,6 +846,8 @@ fun LineRow(
     line: LineSummary,
     onClick: () -> Unit,
 ) {
+    val streak = 0
+    val threshold = 3
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -837,28 +860,58 @@ fun LineRow(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = line.name.toDisplayName(),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                SourcePill(source = line.source)
-            }
             Text(
-                text = formatSanLine(line.plies, maxPlies = 10),
+                text = line.name.toDisplayName(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = linePreviewSans(line, maxPlies = 6),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ProgressBar(
+                    current = streak,
+                    total = threshold,
+                    modifier = Modifier.width(60.dp),
+                )
+                Text(
+                    text = "$streak/$threshold",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ProgressBar(
+    current: Int,
+    total: Int,
+    modifier: Modifier = Modifier,
+) {
+    val fraction = if (total <= 0) 0f else current.coerceIn(0, total).toFloat() / total.toFloat()
+    Box(
+        modifier = modifier
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        if (fraction > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .height(4.dp)
+                    .background(MaterialTheme.colorScheme.primary),
             )
         }
     }
@@ -886,6 +939,7 @@ private fun LazyListScope.detailLineSection(
 private fun LazyListScope.openingSection(
     title: String,
     openings: List<Pair<Int, OpeningSummary>>,
+    showProgress: Boolean,
     onOpeningSelected: (OpeningSummary) -> Unit,
 ) {
     if (openings.isEmpty()) return
@@ -898,6 +952,7 @@ private fun LazyListScope.openingSection(
         val (_, opening) = indexedOpening
         OpeningRow(
             opening = opening,
+            showProgress = showProgress,
             onClick = { onOpeningSelected(opening) },
         )
     }
@@ -1217,6 +1272,15 @@ fun formatSanLine(plies: List<PlySummary>, maxPlies: Int): String {
         }
     }.joinToString(" ")
     return if (plies.size > maxPlies) "$moves ..." else moves
+}
+
+fun linePreviewSans(line: LineSummary, maxPlies: Int): String {
+    val visible = line.sans.take(maxPlies)
+    return if (visible.isEmpty()) {
+        "No moves"
+    } else {
+        visible.joinToString(" ")
+    }
 }
 
 fun lineDepthLabel(line: LineSummary): String {

@@ -157,6 +157,11 @@ fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
 @Composable
 fun ChessOpeningsApp() {
     val context = LocalContext.current
+    remember {
+        check(SharedCoreBridge.isChessKitAvailable()) {
+            "Shared ChessOpeningsCore bridge is unavailable"
+        }
+    }
     val openings = remember {
         context.assets.open("openings.json")
             .bufferedReader()

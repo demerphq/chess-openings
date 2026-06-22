@@ -24,7 +24,7 @@ ANDROID_APK ?= $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk
 SWIFT_BIN ?= $(HOME)/.local/share/swift-toolchains/swift-6.3.2-RELEASE-ubuntu24.04/usr/bin/swift
 CORE_DIR ?= Packages/ChessOpeningsCore
 
-.PHONY: build test test-all clean android-bootstrap android-build android-test android-clean android-emulator-image android-emulator-create android-emulator-launch android-emulator-wait android-install android-run android-emulator-run swift-android-bootstrap core-test core-android-build
+.PHONY: build test test-all clean android-bootstrap android-build android-test android-clean android-emulator-image android-emulator-create android-emulator-launch android-emulator-wait android-install android-run android-emulator-run swift-android-bootstrap core-test core-android-build core-android-bridge-build android-sync-swift-bridge-libs
 
 # build only (no tests)
 build:
@@ -49,7 +49,7 @@ clean:
 android-bootstrap:
 	./Scripts/Android/bootstrap-android.sh
 
-android-build:
+android-build: android-sync-swift-bridge-libs
 	$(ANDROID_ENV) $(ANDROID_GRADLE) -p "$(ANDROID_DIR)" assembleDebug
 
 android-test:
@@ -93,5 +93,12 @@ core-test:
 	$(SWIFT_BIN) test --package-path "$(CORE_DIR)"
 
 core-android-build:
-	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --swift-sdk x86_64-unknown-linux-android28 --static-swift-stdlib
-	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --swift-sdk aarch64-unknown-linux-android28 --static-swift-stdlib
+	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --target ChessOpeningsCore --swift-sdk x86_64-unknown-linux-android28 --static-swift-stdlib
+	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --target ChessOpeningsCore --swift-sdk aarch64-unknown-linux-android28 --static-swift-stdlib
+
+core-android-bridge-build:
+	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --product ChessOpeningsCoreBridge --swift-sdk x86_64-unknown-linux-android28
+	$(SWIFT_BIN) build --package-path "$(CORE_DIR)" --product ChessOpeningsCoreBridge --swift-sdk aarch64-unknown-linux-android28
+
+android-sync-swift-bridge-libs: core-android-bridge-build
+	./Scripts/Android/sync-swift-bridge-libs.sh

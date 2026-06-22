@@ -452,7 +452,8 @@ fun DrillScreen(
     line: LineSummary,
     onBack: () -> Unit,
 ) {
-    var currentPlyCount by remember(line) { mutableIntStateOf(0) }
+    val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
+    var currentPlyCount by remember(line, initialPlyCount) { mutableIntStateOf(initialPlyCount) }
     var selectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var feedback by remember(line) { mutableStateOf<String?>(null) }
     val visiblePlies = line.plies.take(currentPlyCount)
@@ -502,12 +503,16 @@ fun DrillScreen(
             onSquareClick = { coordinate ->
                 val selected = selectedSquare
                 if (selected == null) {
-                    selectedSquare = coordinate
-                    feedback = null
+                    if (canStartDrillMove(coordinate, board, nextPly, opening.side)) {
+                        selectedSquare = coordinate
+                        feedback = null
+                    } else if (nextPly != null) {
+                        feedback = selectExpectedPieceFeedback(nextPly)
+                    }
                 } else {
                     val playedUci = "$selected$coordinate"
                     if (nextPly != null && sameMoveSquares(playedUci, nextPly.uci)) {
-                        currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size)
+                        currentPlyCount = advancedDrillPlyCountAfterUserMove(currentPlyCount, line)
                         selectedSquare = null
                         feedback = null
                     } else {
@@ -544,22 +549,22 @@ fun DrillScreen(
         ) {
             TextButton(
                 onClick = {
-                    currentPlyCount = 0
+                    currentPlyCount = initialPlyCount
                     selectedSquare = null
                     feedback = null
                 },
-                enabled = currentPlyCount > 0,
+                enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("reset")
             }
             TextButton(
                 onClick = {
-                    currentPlyCount = (currentPlyCount - 1).coerceAtLeast(0)
+                    currentPlyCount = (currentPlyCount - 1).coerceAtLeast(initialPlyCount)
                     selectedSquare = null
                     feedback = null
                 },
-                enabled = currentPlyCount > 0,
+                enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("previous")
@@ -1015,6 +1020,36 @@ fun sameMoveSquares(playedUci: String, expectedUci: String): Boolean =
 
 fun expectedMoveFeedback(nextPly: PlySummary?): String =
     nextPly?.let { "Try again · expected ${it.san}" } ?: "Line complete"
+
+fun selectExpectedPieceFeedback(nextPly: PlySummary): String =
+    "Select the piece for ${nextPly.san}"
+
+fun initialDrillPlyCount(
+    opening: OpeningSummary,
+    line: LineSummary,
+): Int =
+    if (opening.side.isBlackSide() && line.plies.isNotEmpty()) 1 else 0
+
+fun advancedDrillPlyCountAfterUserMove(
+    currentPlyCount: Int,
+    line: LineSummary,
+): Int =
+    (currentPlyCount + 2).coerceAtMost(line.plies.size)
+
+fun canStartDrillMove(
+    coordinate: String,
+    board: List<BoardSquare>,
+    nextPly: PlySummary?,
+    openingSide: String,
+): Boolean {
+    val next = nextPly ?: return false
+    if (next.uci.length < 4 || coordinate != next.uci.substring(0, 2)) return false
+    val pieceCode = board.firstOrNull { it.coordinate == coordinate }?.pieceCode ?: return false
+    return pieceCode.isNotBlank() && pieceCode.first() == pieceColorCode(openingSide)
+}
+
+fun pieceColorCode(openingSide: String): Char =
+    if (openingSide.isBlackSide()) 'b' else 'w'
 
 private fun promotedPieceCode(pieceCode: String, promotion: Char?): String? {
     if (pieceCode.isBlank() || promotion == null) return null

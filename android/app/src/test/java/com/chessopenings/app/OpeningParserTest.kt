@@ -173,4 +173,54 @@ class OpeningParserTest {
         assertEquals("Try again · expected e4", expectedMoveFeedback(next))
         assertEquals("Line complete", expectedMoveFeedback(null))
     }
+
+    @Test
+    fun startsBlackDrillsAfterScriptedWhiteMove() {
+        val line = sampleDrillLine()
+        val whiteOpening = sampleOpening(side = "white", line = line)
+        val blackOpening = sampleOpening(side = "black", line = line)
+
+        assertEquals(0, initialDrillPlyCount(whiteOpening, line))
+        assertEquals(1, initialDrillPlyCount(blackOpening, line))
+        assertEquals(2, advancedDrillPlyCountAfterUserMove(0, line))
+        assertEquals(3, advancedDrillPlyCountAfterUserMove(1, line))
+    }
+
+    @Test
+    fun restrictsDrillStartSquareToExpectedUserPiece() {
+        val line = sampleDrillLine()
+        val startingBoard = boardSquaresAfterPlies(emptyList())
+        val blackReplyBoard = boardSquaresAfterPlies(line.plies.take(1))
+
+        assertEquals(true, canStartDrillMove("e2", startingBoard, line.plies[0], "white"))
+        assertEquals(false, canStartDrillMove("d2", startingBoard, line.plies[0], "white"))
+        assertEquals(false, canStartDrillMove("e4", startingBoard, line.plies[0], "white"))
+        assertEquals(false, canStartDrillMove("e7", startingBoard, line.plies[1], "white"))
+        assertEquals(true, canStartDrillMove("e7", blackReplyBoard, line.plies[1], "black"))
+        assertEquals('w', pieceColorCode("white"))
+        assertEquals('b', pieceColorCode("black"))
+        assertEquals("Select the piece for e4", selectExpectedPieceFeedback(line.plies[0]))
+    }
+
+    private fun sampleOpening(side: String, line: LineSummary): OpeningSummary =
+        OpeningSummary(
+            name = "italian game",
+            eco = "C50",
+            side = side,
+            description = null,
+            isSeed = true,
+            lines = listOf(line),
+        )
+
+    private fun sampleDrillLine(): LineSummary =
+        LineSummary(
+            name = "Bc5",
+            source = "masters",
+            tags = emptyList(),
+            plies = listOf(
+                PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList()),
+                PlySummary(san = "e5", uci = "e7e5", annotation = null, alternativeSans = emptyList()),
+                PlySummary(san = "Nf3", uci = "g1f3", annotation = null, alternativeSans = emptyList()),
+            ),
+        )
 }

@@ -25,10 +25,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
@@ -94,6 +96,11 @@ data class BoardSquare(
 ) {
     val coordinate: String = "$file$rank"
 }
+
+data class DrillSelection(
+    val opening: OpeningSummary,
+    val line: LineSummary,
+)
 
 enum class AppTab(
     val title: String,
@@ -176,6 +183,16 @@ fun ChessOpeningsApp() {
 @Composable
 fun ChessOpeningsHome(openings: List<OpeningSummary>) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
+    var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
+
+    drillSelection?.let { selection ->
+        DrillScreen(
+            opening = selection.opening,
+            line = selection.line,
+            onBack = { drillSelection = null },
+        )
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -187,6 +204,9 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
             OpeningCatalogue(
                 openings = openings,
                 tab = selectedTab,
+                onStartDrill = { opening, line ->
+                    drillSelection = DrillSelection(opening, line)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -215,6 +235,7 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
 fun OpeningCatalogue(
     openings: List<OpeningSummary>,
     tab: AppTab,
+    onStartDrill: (OpeningSummary, LineSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedOpeningIndex by remember { mutableIntStateOf(0) }
@@ -240,6 +261,7 @@ fun OpeningCatalogue(
                     SelectedLineDetail(
                         opening = selectedOpening,
                         line = selectedLine,
+                        onStartDrill = { onStartDrill(selectedOpening, selectedLine) },
                     )
                 }
 
@@ -348,6 +370,7 @@ fun CatalogueHeader(
 fun SelectedLineDetail(
     opening: OpeningSummary,
     line: LineSummary,
+    onStartDrill: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -411,8 +434,111 @@ fun SelectedLineDetail(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Button(
+                    onClick = onStartDrill,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("drill")
+                }
             }
         }
+    }
+}
+
+@Composable
+fun DrillScreen(
+    opening: OpeningSummary,
+    line: LineSummary,
+    onBack: () -> Unit,
+) {
+    var currentPlyCount by remember(line) { mutableIntStateOf(0) }
+    val visiblePlies = line.plies.take(currentPlyCount)
+    val board = remember(line, currentPlyCount) { boardSquaresAfterPlies(visiblePlies) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onBack) {
+                Text("back")
+            }
+            SourcePill(source = line.source)
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = opening.name.toDisplayName(),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = line.name.toDisplayName(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        BoardGrid(
+            board = board,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Text(
+            text = drillProgressLabel(currentPlyCount, line),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+        )
+
+        Text(
+            text = formatSanLine(visiblePlies, maxPlies = 18),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            TextButton(
+                onClick = { currentPlyCount = 0 },
+                enabled = currentPlyCount > 0,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("reset")
+            }
+            TextButton(
+                onClick = { currentPlyCount = (currentPlyCount - 1).coerceAtLeast(0) },
+                enabled = currentPlyCount > 0,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("previous")
+            }
+            Button(
+                onClick = { currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size) },
+                enabled = currentPlyCount < line.plies.size,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("next")
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 
@@ -428,33 +554,40 @@ fun BoardPreview(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF6F655A), RoundedCornerShape(6.dp)),
-            color = Color(0xFFEEE2D2),
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                board.chunked(8).forEach { rankSquares ->
-                    Row(modifier = Modifier.weight(1f)) {
-                        rankSquares.forEachIndexed { index, square ->
-                            BoardSquareCell(
-                                square = square,
-                                dark = ((square.rank + index) % 2 == 0),
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        BoardGrid(board = board, modifier = Modifier.fillMaxWidth())
         Text(
             text = "Start position · previewing ${firstMoveLabel(line)}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
         )
+    }
+}
+
+@Composable
+fun BoardGrid(
+    board: List<BoardSquare>,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFF6F655A), RoundedCornerShape(6.dp)),
+        color = Color(0xFFEEE2D2),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            board.chunked(8).forEach { rankSquares ->
+                Row(modifier = Modifier.weight(1f)) {
+                    rankSquares.forEachIndexed { index, square ->
+                        BoardSquareCell(
+                            square = square,
+                            dark = ((square.rank + index) % 2 == 0),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -692,16 +825,66 @@ fun SourcePill(source: String) {
 
 fun startingBoardSquares(highlightedMove: String): List<BoardSquare> {
     val highlightedSquares = highlightedSquaresForUci(highlightedMove)
-    return (8 downTo 1).flatMap { rank ->
+    val pieces = startingPieceMap().toMutableMap()
+    applyUciMove(pieces, highlightedMove)
+    return boardSquaresFromPieces(pieces, highlightedSquares)
+}
+
+fun boardSquaresAfterPlies(plies: List<PlySummary>): List<BoardSquare> {
+    val pieces = startingPieceMap().toMutableMap()
+    plies.forEach { ply -> applyUciMove(pieces, ply.uci) }
+    val highlightedSquares = highlightedSquaresForUci(plies.lastOrNull()?.uci.orEmpty())
+    return boardSquaresFromPieces(pieces, highlightedSquares)
+}
+
+private fun boardSquaresFromPieces(
+    pieces: Map<String, String>,
+    highlightedSquares: Set<String>,
+): List<BoardSquare> =
+    (8 downTo 1).flatMap { rank ->
         ('a'..'h').map { file ->
             val coordinate = "$file$rank"
             BoardSquare(
                 file = file,
                 rank = rank,
-                pieceCode = previewPieceAt(file, rank, highlightedMove),
+                pieceCode = pieces[coordinate].orEmpty(),
                 highlighted = coordinate in highlightedSquares,
             )
         }
+    }
+
+fun startingPieceMap(): Map<String, String> =
+    (1..8).flatMap { rank ->
+        ('a'..'h').mapNotNull { file ->
+            val piece = startingPieceAt(file, rank)
+            if (piece.isBlank()) null else "$file$rank" to piece
+        }
+    }.toMap()
+
+fun applyUciMove(
+    pieces: MutableMap<String, String>,
+    uci: String,
+) {
+    if (uci.length < 4) return
+    val from = uci.substring(0, 2)
+    val to = uci.substring(2, 4)
+    if (!from.isBoardCoordinate() || !to.isBoardCoordinate()) return
+
+    val movedPiece = pieces.remove(from) ?: return
+    pieces[to] = promotedPieceCode(movedPiece, uci.getOrNull(4)) ?: movedPiece
+    applyCastlingRookMove(pieces, from, to)
+}
+
+private fun applyCastlingRookMove(
+    pieces: MutableMap<String, String>,
+    from: String,
+    to: String,
+) {
+    when ("$from$to") {
+        "e1g1" -> pieces["f1"] = pieces.remove("h1") ?: return
+        "e1c1" -> pieces["d1"] = pieces.remove("a1") ?: return
+        "e8g8" -> pieces["f8"] = pieces.remove("h8") ?: return
+        "e8c8" -> pieces["d8"] = pieces.remove("a8") ?: return
     }
 }
 
@@ -729,6 +912,16 @@ fun previewPieceAt(file: Char, rank: Int, uci: String): String {
         from -> ""
         to -> promotedPieceCode(movedPiece, uci.getOrNull(4)) ?: movedPiece
         else -> startingPieceAt(file, rank)
+    }
+}
+
+fun drillProgressLabel(currentPlyCount: Int, line: LineSummary): String {
+    if (line.plies.isEmpty()) return "No moves"
+    return if (currentPlyCount >= line.plies.size) {
+        "Line complete"
+    } else {
+        val next = line.plies[currentPlyCount]
+        "Move ${currentPlyCount + 1} of ${line.plies.size} · next ${next.san}"
     }
 }
 

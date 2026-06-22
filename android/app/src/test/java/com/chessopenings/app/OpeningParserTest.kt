@@ -107,6 +107,34 @@ class OpeningParserTest {
     }
 
     @Test
+    fun buildsBoardAfterLinePlies() {
+        val plies = listOf(
+            PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList()),
+            PlySummary(san = "e5", uci = "e7e5", annotation = null, alternativeSans = emptyList()),
+            PlySummary(san = "Nf3", uci = "g1f3", annotation = null, alternativeSans = emptyList()),
+        )
+        val board = boardSquaresAfterPlies(plies).associate { it.coordinate to it.pieceCode }
+
+        assertEquals("wp", board["e4"])
+        assertEquals("bp", board["e5"])
+        assertEquals("wn", board["f3"])
+        assertEquals("", board["e2"])
+        assertEquals("", board["g1"])
+    }
+
+    @Test
+    fun appliesCastlingRookMoveForBoardPlayback() {
+        val pieces = startingPieceMap().toMutableMap()
+
+        applyUciMove(pieces, "e1g1")
+
+        assertEquals("wk", pieces["g1"])
+        assertEquals("wr", pieces["f1"])
+        assertEquals(null, pieces["e1"])
+        assertEquals(null, pieces["h1"])
+    }
+
+    @Test
     fun mapsPieceCodesToDrawableResourcesAndDescriptions() {
         assertEquals(R.drawable.wp, pieceResourceId("wp"))
         assertEquals(R.drawable.bk, pieceResourceId("bk"))

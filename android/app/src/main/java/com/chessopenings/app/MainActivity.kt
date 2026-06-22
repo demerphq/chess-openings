@@ -456,9 +456,13 @@ fun DrillScreen(
     var currentPlyCount by remember(line, initialPlyCount) { mutableIntStateOf(initialPlyCount) }
     var selectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var feedback by remember(line) { mutableStateOf<String?>(null) }
+    var hintShown by remember(line) { mutableStateOf(false) }
+    var solutionShown by remember(line) { mutableStateOf(false) }
     val visiblePlies = line.plies.take(currentPlyCount)
     val board = remember(line, currentPlyCount) { boardSquaresAfterPlies(visiblePlies) }
     val nextPly = line.plies.getOrNull(currentPlyCount)
+    val hintCoordinate = if (hintShown && !solutionShown) nextPly?.fromCoordinate() else null
+    val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
 
     Column(
         modifier = Modifier
@@ -500,6 +504,8 @@ fun DrillScreen(
             board = board,
             orientationSide = opening.side,
             selectedCoordinate = selectedSquare,
+            hintCoordinate = hintCoordinate,
+            solutionCoordinates = solutionCoordinates,
             onSquareClick = { coordinate ->
                 val selected = selectedSquare
                 if (selected == null) {
@@ -515,9 +521,13 @@ fun DrillScreen(
                         currentPlyCount = advancedDrillPlyCountAfterUserMove(currentPlyCount, line)
                         selectedSquare = null
                         feedback = null
+                        hintShown = false
+                        solutionShown = false
                     } else {
                         selectedSquare = coordinate
                         feedback = expectedMoveFeedback(nextPly)
+                        solutionShown = true
+                        hintShown = false
                     }
                 }
             },
@@ -549,9 +559,37 @@ fun DrillScreen(
         ) {
             TextButton(
                 onClick = {
+                    hintShown = !hintShown
+                    if (hintShown) solutionShown = false
+                },
+                enabled = nextPly != null,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (hintShown) "hide hint" else "hint")
+            }
+            TextButton(
+                onClick = {
+                    solutionShown = !solutionShown
+                    if (solutionShown) hintShown = false
+                },
+                enabled = nextPly != null,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (solutionShown) "hide" else "solution")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            TextButton(
+                onClick = {
                     currentPlyCount = initialPlyCount
                     selectedSquare = null
                     feedback = null
+                    hintShown = false
+                    solutionShown = false
                 },
                 enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
@@ -563,6 +601,8 @@ fun DrillScreen(
                     currentPlyCount = (currentPlyCount - 1).coerceAtLeast(initialPlyCount)
                     selectedSquare = null
                     feedback = null
+                    hintShown = false
+                    solutionShown = false
                 },
                 enabled = currentPlyCount > initialPlyCount,
                 modifier = Modifier.weight(1f),
@@ -574,6 +614,8 @@ fun DrillScreen(
                     currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size)
                     selectedSquare = null
                     feedback = null
+                    hintShown = false
+                    solutionShown = false
                 },
                 enabled = currentPlyCount < line.plies.size,
                 modifier = Modifier.weight(1f),
@@ -618,6 +660,8 @@ fun BoardGrid(
     modifier: Modifier = Modifier,
     orientationSide: String = "white",
     selectedCoordinate: String? = null,
+    hintCoordinate: String? = null,
+    solutionCoordinates: Set<String> = emptySet(),
     onSquareClick: ((String) -> Unit)? = null,
 ) {
     val displayedSquares = remember(board, orientationSide) {
@@ -639,6 +683,8 @@ fun BoardGrid(
                             dark = isDarkBoardSquare(square.file, square.rank),
                             orientationSide = orientationSide,
                             selected = square.coordinate == selectedCoordinate,
+                            hinted = square.coordinate == hintCoordinate,
+                            solution = square.coordinate in solutionCoordinates,
                             onClick = onSquareClick,
                             modifier = Modifier.weight(1f),
                         )
@@ -655,12 +701,16 @@ fun BoardSquareCell(
     dark: Boolean,
     orientationSide: String = "white",
     selected: Boolean = false,
+    hinted: Boolean = false,
+    solution: Boolean = false,
     onClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val baseColor = if (dark) Color(0xFF9D7A55) else Color(0xFFE9D7B9)
     val background = when {
         selected -> Color(0xFF6EA4B8)
+        solution -> Color(0xFF88B6D8)
+        hinted -> Color(0xFF92BE74)
         square.highlighted -> Color(0xFFB9C86B)
         else -> baseColor
     }
@@ -1068,6 +1118,20 @@ fun canStartDrillMove(
 
 fun pieceColorCode(openingSide: String): Char =
     if (openingSide.isBlackSide()) 'b' else 'w'
+
+fun PlySummary.fromCoordinate(): String? =
+    uci.takeIf { it.length >= 4 }
+        ?.substring(0, 2)
+        ?.takeIf { it.isBoardCoordinate() }
+
+fun PlySummary.moveCoordinates(): Set<String> {
+    if (uci.length < 4) return emptySet()
+    val from = uci.substring(0, 2)
+    val to = uci.substring(2, 4)
+    return listOf(from, to)
+        .filter { it.isBoardCoordinate() }
+        .toSet()
+}
 
 private fun promotedPieceCode(pieceCode: String, promotion: Char?): String? {
     if (pieceCode.isBlank() || promotion == null) return null

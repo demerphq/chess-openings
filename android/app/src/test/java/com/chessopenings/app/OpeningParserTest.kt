@@ -216,6 +216,20 @@ class OpeningParserTest {
         assertEquals("Select the piece for e4", selectExpectedPieceFeedback(line.plies[0]))
     }
 
+    @Test
+    fun extractsHintAndSolutionCoordinatesFromBookMove() {
+        val move = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
+        val promotion = PlySummary(san = "a8=Q", uci = "a7a8q", annotation = null, alternativeSans = emptyList())
+        val malformed = PlySummary(san = "bad", uci = "castle", annotation = null, alternativeSans = emptyList())
+
+        assertEquals("e2", move.fromCoordinate())
+        assertEquals(setOf("e2", "e4"), move.moveCoordinates())
+        assertEquals("a7", promotion.fromCoordinate())
+        assertEquals(setOf("a7", "a8"), promotion.moveCoordinates())
+        assertEquals(null, malformed.fromCoordinate())
+        assertEquals(emptySet<String>(), malformed.moveCoordinates())
+    }
+
     private fun sampleOpening(side: String, line: LineSummary): OpeningSummary =
         OpeningSummary(
             name = "italian game",

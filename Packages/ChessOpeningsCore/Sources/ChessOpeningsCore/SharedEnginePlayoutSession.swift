@@ -116,6 +116,16 @@ public struct SharedPlayoutMove: Codable, Equatable, Sendable {
     public let fenAfterMove: String
 }
 
+public struct SharedPlayoutStoredMove: Codable, Equatable, Sendable {
+    public let uci: String
+    public let byUser: Bool
+
+    public init(uci: String, byUser: Bool) {
+        self.uci = uci
+        self.byUser = byUser
+    }
+}
+
 public enum SharedPlayoutSubmitOutcome: Equatable, Sendable {
     case accepted(SharedPlayoutMove, engineReply: SharedPlayoutMove?)
     case invalidInput
@@ -228,6 +238,28 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         status = .waitingForUser
     }
 
+    public func restore(moves persisted: [SharedPlayoutStoredMove]) -> Bool {
+        resetToInitialPosition()
+        for stored in persisted {
+            guard let move = parseUCI(stored.uci, in: board.position),
+                  board.canMove(pieceAt: move.start, to: move.end),
+                  !stored.byUser || move.piece.color.openingSide == userSide else {
+                resetToInitialPosition()
+                return false
+            }
+            _ = recordApply(move, byUser: stored.byUser)
+        }
+
+        if let reason = Self.reason(forBoardState: board.state) {
+            status = .gameOver(reason)
+        } else {
+            status = Self.userIsOnMove(userSide: userSide, position: board.position)
+                ? .waitingForUser
+                : .engineThinking
+        }
+        return true
+    }
+
     private func playEngineReply() async -> SharedPlayoutMove? {
         status = .engineThinking
         let decision = await engine.bestMove(
@@ -270,13 +302,21 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     }
 
     private func rebuild(from retainedHistory: [(move: Move, byUser: Bool)]) {
+        resetToInitialPosition()
+        retainedHistory.forEach { record in
+            _ = recordApply(record.move, byUser: record.byUser)
+        }
+    }
+
+    private func resetToInitialPosition() {
         guard let start = Position(fen: initialFEN) else { return }
         board = Board(position: start)
         history = []
         moves = []
-        retainedHistory.forEach { record in
-            _ = recordApply(record.move, byUser: record.byUser)
-        }
+        lastEngineEval = nil
+        status = Self.userIsOnMove(userSide: userSide, position: start)
+            ? .waitingForUser
+            : .engineThinking
     }
 
     private func parseUCI(_ uci: String, in position: Position) -> Move? {

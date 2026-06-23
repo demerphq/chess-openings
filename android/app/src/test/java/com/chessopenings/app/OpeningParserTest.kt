@@ -319,6 +319,8 @@ class OpeningParserTest {
         assertEquals(snapshot, selection?.restoredSnapshot)
         assertEquals("drill", snapshot.phase)
         assertEquals(null, snapshot.playoutFen)
+        assertEquals(null, snapshot.playoutStartFen)
+        assertEquals(null, snapshot.playoutMovesJson)
         assertEquals(10, snapshot.engineLevel)
         assertEquals(null, drillSelectionForSnapshot(emptyList(), snapshot))
     }

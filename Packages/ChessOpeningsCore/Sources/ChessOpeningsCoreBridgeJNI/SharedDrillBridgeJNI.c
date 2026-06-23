@@ -30,6 +30,7 @@ extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_position_fen(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_moves_json(int64_t handle, char *buffer, int32_t capacity);
+extern int32_t chess_openings_core_shared_playout_restore_moves(int64_t handle, const char *moves_json);
 extern int32_t chess_openings_core_shared_playout_undo(int64_t handle);
 extern void chess_openings_core_shared_playout_release(int64_t handle);
 
@@ -358,6 +359,35 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutMovesJson(
     (void)receiver;
     (void)handle;
     return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_restoreSharedPlayoutMoves(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle,
+    jstring moves_json
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    if (moves_json == 0) {
+        return -1;
+    }
+
+    const char *chars = (*env)->GetStringUTFChars(env, moves_json, 0);
+    if (chars == 0) {
+        return -1;
+    }
+    int32_t restored = chess_openings_core_shared_playout_restore_moves((int64_t)handle, chars);
+    (*env)->ReleaseStringUTFChars(env, moves_json, chars);
+    return (jint)restored;
+#else
+    (void)env;
+    (void)receiver;
+    (void)handle;
+    (void)moves_json;
+    return -1;
 #endif
 }
 

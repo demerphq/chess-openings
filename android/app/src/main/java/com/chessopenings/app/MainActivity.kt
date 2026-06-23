@@ -120,6 +120,8 @@ data class PersistedDrillSnapshot(
     val madeMistake: Boolean,
     val phase: String = SNAPSHOT_PHASE_DRILL,
     val playoutFen: String? = null,
+    val playoutStartFen: String? = null,
+    val playoutMovesJson: String? = null,
     val engineLevel: Int = DEFAULT_ENGINE_LEVEL,
 )
 
@@ -288,6 +290,8 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
                 ?.takeIf { it == SNAPSHOT_PHASE_DRILL || it == SNAPSHOT_PHASE_PLAYOUT }
                 ?: SNAPSHOT_PHASE_DRILL,
             playoutFen = preferences.getString("active.playoutFen", null)?.takeIf { it.isNotBlank() },
+            playoutStartFen = preferences.getString("active.playoutStartFen", null)?.takeIf { it.isNotBlank() },
+            playoutMovesJson = preferences.getString("active.playoutMovesJson", null)?.takeIf { it.isNotBlank() },
             engineLevel = preferences.getInt("active.engineLevel", DEFAULT_ENGINE_LEVEL),
         )
     }
@@ -308,6 +312,8 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
             .putInt("active.plyIndex", plyIndex)
             .putBoolean("active.madeMistake", madeMistake)
             .remove("active.playoutFen")
+            .remove("active.playoutStartFen")
+            .remove("active.playoutMovesJson")
             .remove("active.engineLevel")
             .apply()
     }
@@ -316,6 +322,8 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
         opening: OpeningSummary,
         line: LineSummary,
         positionFen: String,
+        startingFen: String,
+        movesJson: String,
         madeMistake: Boolean,
         engineLevel: Int,
     ) {
@@ -325,6 +333,8 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
             .putInt("active.plyIndex", line.plies.size)
             .putBoolean("active.madeMistake", madeMistake)
             .putString("active.playoutFen", positionFen)
+            .putString("active.playoutStartFen", startingFen)
+            .putString("active.playoutMovesJson", movesJson)
             .putInt("active.engineLevel", engineLevel.coerceIn(0, 20))
             .apply()
     }
@@ -336,6 +346,8 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
             .remove("active.plyIndex")
             .remove("active.madeMistake")
             .remove("active.playoutFen")
+            .remove("active.playoutStartFen")
+            .remove("active.playoutMovesJson")
             .remove("active.engineLevel")
             .apply()
     }
@@ -1208,6 +1220,7 @@ fun DrillScreen(
     var completedViaShowLine by remember(line) { mutableStateOf(false) }
     var completionRecorded by remember(line) { mutableStateOf(false) }
     var playoutHandle by remember(line) { mutableStateOf(0L) }
+    var playoutStartFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutPositionFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutSelectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var playoutFeedback by remember(line) { mutableStateOf<String?>(null) }
@@ -1246,21 +1259,28 @@ fun DrillScreen(
         completedViaShowLine = false
         completionRecorded = restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT
         playoutHandle = 0L
+        playoutStartFen = null
         playoutPositionFen = null
         playoutSelectedSquare = null
         playoutFeedback = null
         playoutMoves = emptyList()
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
-            val restoredFen = restoredSnapshot.playoutFen ?: snapshot.positionFen
+            val restoredStartFen = restoredSnapshot.playoutStartFen
+                ?: restoredSnapshot.playoutFen
+                ?: snapshot.positionFen
             val playout = SharedCoreBridge.createSharedPlayoutSession(
-                restoredFen,
+                restoredStartFen,
                 opening.side.toSharedDrillUserSide(),
                 restoredSnapshot.engineLevel,
             )
             if (playout != 0L) {
-                SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
+                val movesJson = restoredSnapshot.playoutMovesJson
+                if (movesJson.isNullOrBlank() || SharedCoreBridge.restoreSharedPlayoutMoves(playout, movesJson) != 1) {
+                    SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
+                }
                 playoutHandle = playout
-                playoutPositionFen = sharedPlayoutPositionFen(playout, restoredFen)
+                playoutStartFen = restoredStartFen
+                playoutPositionFen = sharedPlayoutPositionFen(playout, restoredSnapshot.playoutFen ?: restoredStartFen)
                 playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
                 playoutFeedback = "resumed playout"
             }
@@ -1391,6 +1411,8 @@ fun DrillScreen(
                                 opening = opening,
                                 line = line,
                                 positionFen = playoutPositionFen ?: displayedPositionFen,
+                                startingFen = playoutStartFen ?: currentPositionFen,
+                                movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
                                 madeMistake = madeMistake,
                                 engineLevel = settingsStore.engineLevel,
                             )
@@ -1525,6 +1547,8 @@ fun DrillScreen(
                             opening = opening,
                             line = line,
                             positionFen = playoutPositionFen ?: currentPositionFen,
+                            startingFen = playoutStartFen ?: currentPositionFen,
+                            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
                             madeMistake = madeMistake,
                             engineLevel = settingsStore.engineLevel,
                         )
@@ -1541,6 +1565,7 @@ fun DrillScreen(
                     onClick = {
                         SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
                         playoutHandle = 0L
+                        playoutStartFen = null
                         playoutPositionFen = null
                         playoutSelectedSquare = null
                         playoutFeedback = null
@@ -1646,12 +1671,15 @@ fun DrillScreen(
                         feedback = "Playout unavailable"
                     } else {
                         playoutHandle = handle
+                        playoutStartFen = currentPositionFen
                         SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
                         playoutPositionFen = sharedPlayoutPositionFen(handle, currentPositionFen)
                         drillSnapshotStore.savePlayout(
                             opening = opening,
                             line = line,
                             positionFen = playoutPositionFen ?: currentPositionFen,
+                            startingFen = currentPositionFen,
+                            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(handle).orEmpty(),
                             madeMistake = madeMistake,
                             engineLevel = settingsStore.engineLevel,
                         )

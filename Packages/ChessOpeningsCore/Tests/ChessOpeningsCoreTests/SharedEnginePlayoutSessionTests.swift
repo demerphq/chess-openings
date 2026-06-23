@@ -93,6 +93,49 @@ import Testing
     #expect(session.status == .waitingForUser)
 }
 
+@Test func sharedPlayoutRestoresPersistedMoveHistoryForUndo() async throws {
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: FakeSharedEngineService()
+    )
+
+    let restored = session.restore(
+        moves: [
+            SharedPlayoutStoredMove(uci: "e2e4", byUser: true),
+            SharedPlayoutStoredMove(uci: "e7e5", byUser: false),
+        ]
+    )
+
+    #expect(restored)
+    #expect(session.moves.map(\.uci) == ["e2e4", "e7e5"])
+    #expect(session.moves.map(\.byUser) == [true, false])
+    #expect(session.status == .waitingForUser)
+
+    session.undo()
+
+    #expect(session.moves.isEmpty)
+    #expect(session.positionFEN == Position.standard.fen)
+}
+
+@Test func sharedPlayoutRestoreRejectsWrongSideUserMove() async throws {
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: FakeSharedEngineService()
+    )
+
+    let restored = session.restore(
+        moves: [
+            SharedPlayoutStoredMove(uci: "e7e5", byUser: true),
+        ]
+    )
+
+    #expect(!restored)
+    #expect(session.moves.isEmpty)
+    #expect(session.positionFEN == Position.standard.fen)
+}
+
 @Test func sharedPlayoutHandlesDrawOffer() async throws {
     let engine = FakeSharedEngineService(evaluations: [.cp(40)])
     let session = try SharedEnginePlayoutSession(

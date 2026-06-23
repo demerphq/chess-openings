@@ -108,6 +108,20 @@ public func chessOpeningsCoreSharedPlayoutMovesJSON(
     return Int32(utf8.count)
 }
 
+@_cdecl("chess_openings_core_shared_playout_restore_moves")
+public func chessOpeningsCoreSharedPlayoutRestoreMoves(
+    _ handle: Int64,
+    _ movesJSON: UnsafePointer<CChar>?
+) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle),
+          let movesJSON,
+          let data = String(cString: movesJSON).data(using: .utf8),
+          let moves = try? JSONDecoder().decode([SharedPlayoutStoredMove].self, from: data) else {
+        return -1
+    }
+    return session.restore(moves: moves) ? 1 : 0
+}
+
 @_cdecl("chess_openings_core_shared_playout_undo")
 public func chessOpeningsCoreSharedPlayoutUndo(_ handle: Int64) -> Int32 {
     guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {

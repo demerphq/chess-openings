@@ -117,6 +117,32 @@ import Testing
     }
 }
 
+@Test func sharedLegalMoveEngineReturnsDeterministicLegalMove() async throws {
+    let engine = SharedLegalMoveEngine()
+
+    let decision = await engine.bestMove(
+        at: Position.standard,
+        skill: 10,
+        budget: .depth(1)
+    )
+
+    #expect(decision?.move.uci == "a2a3")
+    #expect(decision?.evaluation == .cp(0))
+}
+
+@Test func sharedLegalMoveEngineReturnsNilWhenNoMoveExists() async throws {
+    let checkmated = try #require(Position(fen: "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"))
+    let engine = SharedLegalMoveEngine()
+
+    let decision = await engine.bestMove(
+        at: checkmated,
+        skill: 10,
+        budget: .depth(1)
+    )
+
+    #expect(decision == nil)
+}
+
 private final class FakeSharedEngineService: SharedEngineServicing {
     var bestMoves: [String]
     var evaluations: [SharedEngineEvaluation]

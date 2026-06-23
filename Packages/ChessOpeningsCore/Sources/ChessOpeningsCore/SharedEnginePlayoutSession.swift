@@ -56,6 +56,41 @@ public protocol SharedEngineServicing: AnyObject {
     ) async -> SharedEngineEvaluation
 }
 
+public final class SharedLegalMoveEngine: SharedEngineServicing {
+    public init() {}
+
+    public func bestMove(
+        at position: Position,
+        skill: Int,
+        budget: SharedSearchBudget
+    ) async -> SharedEngineDecision? {
+        let board = Board(position: position)
+        guard let candidate = position.pieces
+            .filter({ $0.color == position.sideToMove })
+            .sorted(by: { $0.square.notation < $1.square.notation })
+            .compactMap({ piece -> String? in
+                board.legalMoves(forPieceAt: piece.square)
+                    .sorted(by: { $0.notation < $1.notation })
+                    .first
+                    .map { "\(piece.square.notation)\($0.notation)" }
+            })
+            .first else {
+            return nil
+        }
+        return SharedEngineDecision(
+            move: SharedEngineMove(uci: candidate),
+            evaluation: .cp(0)
+        )
+    }
+
+    public func evaluate(
+        at position: Position,
+        budget: SharedSearchBudget
+    ) async -> SharedEngineEvaluation {
+        .cp(0)
+    }
+}
+
 public enum SharedPlayoutStatus: Equatable, Sendable {
     case waitingForUser
     case engineThinking

@@ -2,6 +2,8 @@ package com.chessopenings.app
 
 import android.content.SharedPreferences
 import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
@@ -122,6 +124,26 @@ data class LineProgressSummary(
     val timesAttempted: Int = 0,
     val timesCompleted: Int = 0,
 )
+
+class AndroidSoundPlayer : AutoCloseable {
+    private val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+
+    fun playMove() {
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, 80)
+    }
+
+    fun playWrongMove() {
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_NACK, 120)
+    }
+
+    fun playCompletion() {
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 160)
+    }
+
+    override fun close() {
+        toneGenerator.release()
+    }
+}
 
 class AndroidProgressStore(private val preferences: SharedPreferences) {
     fun lineProgress(
@@ -375,6 +397,10 @@ fun ChessOpeningsApp() {
             context.getSharedPreferences("settings", Context.MODE_PRIVATE),
         )
     }
+    val soundPlayer = remember { AndroidSoundPlayer() }
+    DisposableEffect(soundPlayer) {
+        onDispose { soundPlayer.close() }
+    }
     var progressRevision by remember { mutableIntStateOf(0) }
     var settingsRevision by remember { mutableIntStateOf(0) }
     remember {
@@ -417,6 +443,7 @@ fun ChessOpeningsApp() {
                 progressStore = progressStore,
                 drillSnapshotStore = drillSnapshotStore,
                 settingsStore = settingsStore,
+                soundPlayer = soundPlayer,
                 progressRevision = progressRevision,
                 settingsRevision = settingsRevision,
                 onProgressChanged = { progressRevision += 1 },
@@ -432,6 +459,7 @@ fun ChessOpeningsHome(
     progressStore: AndroidProgressStore,
     drillSnapshotStore: AndroidDrillSnapshotStore,
     settingsStore: AndroidSettingsStore,
+    soundPlayer: AndroidSoundPlayer,
     progressRevision: Int,
     settingsRevision: Int,
     onProgressChanged: () -> Unit,
@@ -463,6 +491,7 @@ fun ChessOpeningsHome(
             drillSnapshotStore = drillSnapshotStore,
             settingsStore = settingsStore,
             settingsRevision = settingsRevision,
+            soundPlayer = soundPlayer,
             onProgressChanged = onProgressChanged,
             onBack = {
                 drillSnapshotStore.clear()
@@ -1028,6 +1057,7 @@ fun DrillScreen(
     drillSnapshotStore: AndroidDrillSnapshotStore,
     settingsStore: AndroidSettingsStore,
     settingsRevision: Int,
+    soundPlayer: AndroidSoundPlayer,
     onProgressChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -1102,6 +1132,7 @@ fun DrillScreen(
             }
             if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
                 completedViaShowLine = true
+                playCompletionSound(settingsStore, soundPlayer)
                 recordDrillCompletionIfNeeded(
                     progressStore = progressStore,
                     drillSnapshotStore = drillSnapshotStore,
@@ -1183,6 +1214,7 @@ fun DrillScreen(
                             currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
                             currentPositionFen = snapshot.positionFen
                             if (currentPlyCount >= line.plies.size) {
+                                playCompletionSound(settingsStore, soundPlayer)
                                 recordDrillCompletionIfNeeded(
                                     progressStore = progressStore,
                                     drillSnapshotStore = drillSnapshotStore,
@@ -1197,6 +1229,7 @@ fun DrillScreen(
                                     },
                                 )
                             } else {
+                                playMoveSound(settingsStore, soundPlayer)
                                 drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                             }
                             selectedSquare = null
@@ -1208,6 +1241,7 @@ fun DrillScreen(
 
                         SHARED_DRILL_INCORRECT -> {
                             madeMistake = true
+                            playWrongMoveSound(settingsStore, soundPlayer)
                             drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
                             selectedSquare = null
                             feedback = expectedMoveFeedback(nextPly, drillMode)
@@ -1958,6 +1992,27 @@ fun recordDrillCompletionIfNeeded(
     )
     drillSnapshotStore.clear()
     onRecorded()
+}
+
+fun playMoveSound(
+    settingsStore: AndroidSettingsStore,
+    soundPlayer: AndroidSoundPlayer,
+) {
+    if (settingsStore.soundsEnabled) soundPlayer.playMove()
+}
+
+fun playWrongMoveSound(
+    settingsStore: AndroidSettingsStore,
+    soundPlayer: AndroidSoundPlayer,
+) {
+    if (settingsStore.soundsEnabled) soundPlayer.playWrongMove()
+}
+
+fun playCompletionSound(
+    settingsStore: AndroidSettingsStore,
+    soundPlayer: AndroidSoundPlayer,
+) {
+    if (settingsStore.soundsEnabled) soundPlayer.playCompletion()
 }
 
 data class SharedDrillSnapshot(

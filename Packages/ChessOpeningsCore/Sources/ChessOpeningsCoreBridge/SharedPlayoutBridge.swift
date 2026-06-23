@@ -84,6 +84,30 @@ public func chessOpeningsCoreSharedPlayoutPositionFEN(
     return Int32(utf8.count)
 }
 
+@_cdecl("chess_openings_core_shared_playout_moves_json")
+public func chessOpeningsCoreSharedPlayoutMovesJSON(
+    _ handle: Int64,
+    _ buffer: UnsafeMutablePointer<CChar>?,
+    _ capacity: Int32
+) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle),
+          let data = try? JSONEncoder().encode(session.moves),
+          let json = String(data: data, encoding: .utf8) else {
+        return -1
+    }
+    guard let buffer, capacity > 0 else {
+        return Int32(json.utf8.count)
+    }
+
+    let utf8 = Array(json.utf8)
+    let writableCount = min(utf8.count, Int(capacity) - 1)
+    for index in 0..<writableCount {
+        buffer[index] = CChar(bitPattern: utf8[index])
+    }
+    buffer[writableCount] = 0
+    return Int32(utf8.count)
+}
+
 @_cdecl("chess_openings_core_shared_playout_undo")
 public func chessOpeningsCoreSharedPlayoutUndo(_ handle: Int64) -> Int32 {
     guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {

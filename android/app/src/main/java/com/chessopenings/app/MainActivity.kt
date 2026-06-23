@@ -1211,8 +1211,10 @@ fun DrillScreen(
     var playoutPositionFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutSelectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var playoutFeedback by remember(line) { mutableStateOf<String?>(null) }
+    var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     val inPlayout = playoutHandle != 0L
     val visiblePlies = line.plies.take(currentPlyCount)
+    val visibleMoveList = visiblePlies + playoutMoves.map { it.toPlySummary() }
     val displayedPositionFen = playoutPositionFen ?: currentPositionFen
     val board = remember(displayedPositionFen, visiblePlies, inPlayout) {
         boardSquaresFromFen(
@@ -1247,6 +1249,7 @@ fun DrillScreen(
         playoutPositionFen = null
         playoutSelectedSquare = null
         playoutFeedback = null
+        playoutMoves = emptyList()
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredFen = restoredSnapshot.playoutFen ?: snapshot.positionFen
             val playout = SharedCoreBridge.createSharedPlayoutSession(
@@ -1258,6 +1261,7 @@ fun DrillScreen(
                 SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
                 playoutHandle = playout
                 playoutPositionFen = sharedPlayoutPositionFen(playout, restoredFen)
+                playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
                 playoutFeedback = "resumed playout"
             }
         }
@@ -1392,6 +1396,9 @@ fun DrillScreen(
                             )
                             playMoveSound(settingsStore, soundPlayer)
                             playoutSelectedSquare = null
+                            playoutMoves = parseSharedPlayoutMoves(
+                                SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle),
+                            )
                             playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
                         }
 
@@ -1498,7 +1505,7 @@ fun DrillScreen(
         )
 
         Text(
-            text = formatSanLine(visiblePlies, maxPlies = 18),
+            text = formatSanLine(visibleMoveList, maxPlies = 24),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
             maxLines = 3,
@@ -1522,6 +1529,7 @@ fun DrillScreen(
                             engineLevel = settingsStore.engineLevel,
                         )
                         playoutSelectedSquare = null
+                        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
                         playoutFeedback = "playout · your move"
                     },
                     enabled = SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
@@ -1536,6 +1544,7 @@ fun DrillScreen(
                         playoutPositionFen = null
                         playoutSelectedSquare = null
                         playoutFeedback = null
+                        playoutMoves = emptyList()
                         drillSnapshotStore.clear()
                     },
                     modifier = Modifier.weight(1f),
@@ -1647,6 +1656,7 @@ fun DrillScreen(
                             engineLevel = settingsStore.engineLevel,
                         )
                         playoutSelectedSquare = null
+                        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
                         playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
                     }
                 },
@@ -2413,6 +2423,14 @@ fun playoutStatusLabel(status: Int): String =
         SHARED_PLAYOUT_ENGINE_THINKING_STATUS -> "engine thinking"
         else -> "playout · your move"
     }
+
+fun SharedPlayoutMoveSummary.toPlySummary(): PlySummary =
+    PlySummary(
+        san = san,
+        uci = uci,
+        annotation = null,
+        alternativeSans = emptyList(),
+    )
 
 fun pieceColorCode(openingSide: String): Char =
     if (openingSide.isBlackSide()) 'b' else 'w'

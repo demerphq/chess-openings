@@ -26,6 +26,7 @@ object SharedCoreBridge {
     external fun sharedPlayoutPlyIndex(handle: Long): Int
     external fun sharedPlayoutStatus(handle: Long): Int
     external fun sharedPlayoutPositionFen(handle: Long): String?
+    external fun sharedPlayoutMovesJson(handle: Long): String?
     external fun undoSharedPlayoutSession(handle: Long): Int
     external fun releaseSharedPlayoutSession(handle: Long)
 
@@ -54,6 +55,29 @@ object SharedCoreBridge {
 
     private const val SHARED_DRILL_ACCEPTED = 1
     private const val SHARED_DRILL_INVALID_HANDLE = -1
+}
+
+data class SharedPlayoutMoveSummary(
+    val uci: String,
+    val san: String,
+    val byUser: Boolean,
+    val fenAfterMove: String,
+)
+
+fun parseSharedPlayoutMoves(jsonText: String?): List<SharedPlayoutMoveSummary> {
+    if (jsonText.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val moves = JSONArray(jsonText)
+        List(moves.length()) { index ->
+            val move = moves.getJSONObject(index)
+            SharedPlayoutMoveSummary(
+                uci = move.optString("uci"),
+                san = move.optString("san"),
+                byUser = move.optBoolean("byUser"),
+                fenAfterMove = move.optString("fenAfterMove"),
+            )
+        }.filter { it.uci.isNotBlank() && it.san.isNotBlank() }
+    }.getOrElse { emptyList() }
 }
 
 fun LineSummary.toCoreJson(): String =

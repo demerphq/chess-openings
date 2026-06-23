@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 
 #if defined(__ANDROID__)
 #include <jni.h>
@@ -28,6 +29,7 @@ extern int32_t chess_openings_core_shared_playout_submit(int64_t handle, const c
 extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_position_fen(int64_t handle, char *buffer, int32_t capacity);
+extern int32_t chess_openings_core_shared_playout_moves_json(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_undo(int64_t handle);
 extern void chess_openings_core_shared_playout_release(int64_t handle);
 
@@ -311,6 +313,46 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutPositionFen(
         return 0;
     }
     return (*env)->NewStringUTF(env, buffer);
+#else
+    (void)env;
+    (void)receiver;
+    (void)handle;
+    return 0;
+#endif
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutMovesJson(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    int32_t length = chess_openings_core_shared_playout_moves_json(
+        (int64_t)handle,
+        0,
+        0
+    );
+    if (length < 0) {
+        return 0;
+    }
+    char *buffer = (char *)malloc((size_t)length + 1);
+    if (buffer == 0) {
+        return 0;
+    }
+    int32_t written = chess_openings_core_shared_playout_moves_json(
+        (int64_t)handle,
+        buffer,
+        length + 1
+    );
+    if (written < 0) {
+        free(buffer);
+        return 0;
+    }
+    jstring result = (*env)->NewStringUTF(env, buffer);
+    free(buffer);
+    return result;
 #else
     (void)env;
     (void)receiver;

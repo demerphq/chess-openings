@@ -109,7 +109,7 @@ public enum SharedGameOverReason: Equatable, Sendable {
     case engineResigned(accepted: Bool?)
 }
 
-public struct SharedPlayoutMove: Equatable, Sendable {
+public struct SharedPlayoutMove: Codable, Equatable, Sendable {
     public let uci: String
     public let san: String
     public let byUser: Bool

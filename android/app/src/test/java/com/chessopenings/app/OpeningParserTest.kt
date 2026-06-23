@@ -359,6 +359,24 @@ class OpeningParserTest {
         assertEquals(emptySet<String>(), malformed.moveCoordinates())
     }
 
+    @Test
+    fun parsesSharedPlayoutMoveHistory() {
+        val moves = parseSharedPlayoutMoves(
+            """
+            [
+              {"uci":"e2e4","san":"e4","byUser":true,"fenAfterMove":"after e4"},
+              {"uci":"e7e5","san":"e5","byUser":false,"fenAfterMove":"after e5"}
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(2, moves.size)
+        assertEquals("e4", moves[0].san)
+        assertEquals(true, moves[0].byUser)
+        assertEquals("e5", moves[1].toPlySummary().san)
+        assertEquals(emptyList<SharedPlayoutMoveSummary>(), parseSharedPlayoutMoves("not json"))
+    }
+
     private fun sampleOpening(side: String, line: LineSummary): OpeningSummary =
         OpeningSummary(
             name = "italian game",

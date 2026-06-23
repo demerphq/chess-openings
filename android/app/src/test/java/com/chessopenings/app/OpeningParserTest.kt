@@ -365,6 +365,13 @@ class OpeningParserTest {
     }
 
     @Test
+    fun labelsPlayoutConfirmationActions() {
+        assertEquals("offer a draw?", playoutConfirmationTitle(PlayoutConfirmationAction.OfferDraw))
+        assertEquals("resign", playoutConfirmationConfirmLabel(PlayoutConfirmationAction.Resign))
+        assertEquals("Your current game will end.", playoutConfirmationMessage(PlayoutConfirmationAction.Exit))
+    }
+
+    @Test
     fun extractsHintAndSolutionCoordinatesFromBookMove() {
         val move = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
         val promotion = PlySummary(san = "a8=Q", uci = "a7a8q", annotation = null, alternativeSans = emptyList())

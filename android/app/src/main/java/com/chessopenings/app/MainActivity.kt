@@ -213,6 +213,12 @@ data class PendingPromotionMove(
     val inPlayout: Boolean,
 )
 
+enum class PlayoutConfirmationAction {
+    OfferDraw,
+    Resign,
+    Exit,
+}
+
 data class BoardArrow(
     val from: String,
     val to: String,
@@ -1336,6 +1342,7 @@ fun DrillScreen(
     var playoutSelectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var playoutFeedback by remember(line) { mutableStateOf<String?>(null) }
     var pendingPromotion by remember(line) { mutableStateOf<PendingPromotionMove?>(null) }
+    var pendingPlayoutConfirmation by remember(line) { mutableStateOf<PlayoutConfirmationAction?>(null) }
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
     var engineResignationState by remember(line) {
@@ -1388,6 +1395,7 @@ fun DrillScreen(
         playoutSelectedSquare = null
         playoutFeedback = null
         pendingPromotion = null
+        pendingPlayoutConfirmation = null
         playoutMoves = emptyList()
         moveQualityAnnotation = null
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
@@ -1554,6 +1562,57 @@ fun DrillScreen(
         }
     }
 
+    fun exitPlayout() {
+        SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
+        playoutHandle = 0L
+        playoutStartFen = null
+        playoutPositionFen = null
+        playoutSelectedSquare = null
+        playoutFeedback = null
+        pendingPromotion = null
+        pendingPlayoutConfirmation = null
+        playoutMoves = emptyList()
+        moveQualityAnnotation = null
+        engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
+        drillSnapshotStore.clear()
+    }
+
+    fun offerPlayoutDraw() {
+        pendingPlayoutConfirmation = null
+        val status = SharedCoreBridge.offerSharedPlayoutDraw(playoutHandle)
+        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+            "draw agreed"
+        } else {
+            playoutStatusLabel(status)
+        }
+        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+            drillSnapshotStore.clear()
+        }
+        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
+    }
+
+    fun resignPlayout() {
+        pendingPlayoutConfirmation = null
+        val status = SharedCoreBridge.resignSharedPlayout(playoutHandle)
+        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+            "you resigned"
+        } else {
+            playoutStatusLabel(status)
+        }
+        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+            drillSnapshotStore.clear()
+        }
+        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
+    }
+
+    fun confirmPlayoutAction(action: PlayoutConfirmationAction) {
+        when (action) {
+            PlayoutConfirmationAction.OfferDraw -> offerPlayoutDraw()
+            PlayoutConfirmationAction.Resign -> resignPlayout()
+            PlayoutConfirmationAction.Exit -> exitPlayout()
+        }
+    }
+
     LaunchedEffect(showLineIsPlaying, line) {
         if (!showLineIsPlaying) return@LaunchedEffect
         while (showLineIsPlaying && currentPlyCount < line.plies.size) {
@@ -1623,6 +1682,24 @@ fun DrillScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { dismissPromotionDialog() }) {
+                    Text("cancel")
+                }
+            },
+        )
+    }
+
+    pendingPlayoutConfirmation?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingPlayoutConfirmation = null },
+            title = { Text(playoutConfirmationTitle(action)) },
+            text = { Text(playoutConfirmationMessage(action)) },
+            confirmButton = {
+                TextButton(onClick = { confirmPlayoutAction(action) }) {
+                    Text(playoutConfirmationConfirmLabel(action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPlayoutConfirmation = null }) {
                     Text("cancel")
                 }
             },
@@ -1816,19 +1893,7 @@ fun DrillScreen(
                     Text("undo")
                 }
                 TextButton(
-                    onClick = {
-                        SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
-                        playoutHandle = 0L
-                        playoutStartFen = null
-                        playoutPositionFen = null
-                        playoutSelectedSquare = null
-                        playoutFeedback = null
-                        pendingPromotion = null
-                        playoutMoves = emptyList()
-                        moveQualityAnnotation = null
-                        engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
-                        drillSnapshotStore.clear()
-                    },
+                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Exit },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("exit playout")
@@ -1839,36 +1904,14 @@ fun DrillScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 TextButton(
-                    onClick = {
-                        val status = SharedCoreBridge.offerSharedPlayoutDraw(playoutHandle)
-                        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-                            "draw agreed"
-                        } else {
-                            playoutStatusLabel(status)
-                        }
-                        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-                            drillSnapshotStore.clear()
-                        }
-                        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
-                    },
+                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.OfferDraw },
                     enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("offer draw")
                 }
                 TextButton(
-                    onClick = {
-                        val status = SharedCoreBridge.resignSharedPlayout(playoutHandle)
-                        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-                            "you resigned"
-                        } else {
-                            playoutStatusLabel(status)
-                        }
-                        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-                            drillSnapshotStore.clear()
-                        }
-                        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
-                    },
+                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Resign },
                     enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
                     modifier = Modifier.weight(1f),
                 ) {
@@ -3041,6 +3084,32 @@ fun promotionPieceName(promotion: Char): String =
         'b' -> "bishop"
         'n' -> "knight"
         else -> "queen"
+    }
+
+fun playoutConfirmationTitle(action: PlayoutConfirmationAction): String =
+    when (action) {
+        PlayoutConfirmationAction.OfferDraw -> "offer a draw?"
+        PlayoutConfirmationAction.Resign -> "resign the game?"
+        PlayoutConfirmationAction.Exit -> "exit playout?"
+    }
+
+fun playoutConfirmationMessage(action: PlayoutConfirmationAction): String =
+    when (action) {
+        PlayoutConfirmationAction.OfferDraw ->
+            "Stockfish will accept if the position is roughly equal. Otherwise the game continues."
+
+        PlayoutConfirmationAction.Resign ->
+            "Stockfish takes the win immediately and this game ends."
+
+        PlayoutConfirmationAction.Exit ->
+            "Your current game will end."
+    }
+
+fun playoutConfirmationConfirmLabel(action: PlayoutConfirmationAction): String =
+    when (action) {
+        PlayoutConfirmationAction.OfferDraw -> "offer"
+        PlayoutConfirmationAction.Resign -> "resign"
+        PlayoutConfirmationAction.Exit -> "exit"
     }
 
 fun sharedPlayoutPositionFen(

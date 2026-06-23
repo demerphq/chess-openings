@@ -122,6 +122,24 @@ public func chessOpeningsCoreSharedPlayoutRestoreMoves(
     return session.restore(moves: moves) ? 1 : 0
 }
 
+@_cdecl("chess_openings_core_shared_playout_offer_draw")
+public func chessOpeningsCoreSharedPlayoutOfferDraw(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeStatus.invalidHandle.rawValue
+    }
+    waitForAsync { await session.offerDraw() }
+    return SharedPlayoutBridgeStatus(session.status).rawValue
+}
+
+@_cdecl("chess_openings_core_shared_playout_resign")
+public func chessOpeningsCoreSharedPlayoutResign(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeStatus.invalidHandle.rawValue
+    }
+    session.resign()
+    return SharedPlayoutBridgeStatus(session.status).rawValue
+}
+
 @_cdecl("chess_openings_core_shared_playout_undo")
 public func chessOpeningsCoreSharedPlayoutUndo(_ handle: Int64) -> Int32 {
     guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {

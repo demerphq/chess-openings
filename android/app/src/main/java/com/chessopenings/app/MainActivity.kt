@@ -1577,6 +1577,37 @@ fun DrillScreen(
                     Text("exit playout")
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    onClick = {
+                        val status = SharedCoreBridge.offerSharedPlayoutDraw(playoutHandle)
+                        playoutFeedback = playoutStatusLabel(status)
+                        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                            drillSnapshotStore.clear()
+                        }
+                    },
+                    enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("offer draw")
+                }
+                TextButton(
+                    onClick = {
+                        val status = SharedCoreBridge.resignSharedPlayout(playoutHandle)
+                        playoutFeedback = playoutStatusLabel(status)
+                        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                            drillSnapshotStore.clear()
+                        }
+                    },
+                    enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("resign")
+                }
+            }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),

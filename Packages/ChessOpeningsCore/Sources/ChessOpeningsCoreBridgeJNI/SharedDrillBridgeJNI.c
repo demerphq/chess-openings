@@ -31,6 +31,8 @@ extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_position_fen(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_moves_json(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_restore_moves(int64_t handle, const char *moves_json);
+extern int32_t chess_openings_core_shared_playout_offer_draw(int64_t handle);
+extern int32_t chess_openings_core_shared_playout_resign(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_undo(int64_t handle);
 extern void chess_openings_core_shared_playout_release(int64_t handle);
 
@@ -389,6 +391,28 @@ Java_com_chessopenings_app_SharedCoreBridge_restoreSharedPlayoutMoves(
     (void)moves_json;
     return -1;
 #endif
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_offerSharedPlayoutDraw(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+    (void)env;
+    (void)receiver;
+    return (jint)chess_openings_core_shared_playout_offer_draw((int64_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_resignSharedPlayout(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+    (void)env;
+    (void)receiver;
+    return (jint)chess_openings_core_shared_playout_resign((int64_t)handle);
 }
 
 JNIEXPORT jint JNICALL

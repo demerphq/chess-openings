@@ -1625,6 +1625,39 @@ fun DrillScreen(
         }
     }
 
+    fun startPlayout() {
+        val handle = SharedCoreBridge.createSharedPlayoutSession(
+            currentPositionFen,
+            opening.side.toSharedDrillUserSide(),
+            settingsStore.engineLevel,
+            settingsStore.moveAnalysisDepth,
+        )
+        if (handle == 0L) {
+            feedback = "Playout unavailable"
+            return
+        }
+
+        playoutHandle = handle
+        playoutStartFen = currentPositionFen
+        SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
+        playoutPositionFen = sharedPlayoutPositionFen(handle, currentPositionFen)
+        drillSnapshotStore.savePlayout(
+            opening = opening,
+            line = line,
+            positionFen = playoutPositionFen ?: currentPositionFen,
+            startingFen = currentPositionFen,
+            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(handle).orEmpty(),
+            madeMistake = madeMistake,
+            engineLevel = settingsStore.engineLevel,
+        )
+        playoutSelectedSquare = null
+        pendingPromotion = null
+        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
+        moveQualityAnnotation = null
+        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
+        playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
+    }
+
     LaunchedEffect(showLineIsPlaying, line) {
         if (!showLineIsPlaying) return@LaunchedEffect
         while (showLineIsPlaying && currentPlyCount < line.plies.size) {
@@ -1854,25 +1887,33 @@ fun DrillScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Text(
-            text = if (inPlayout) {
-                playoutFeedback ?: "playout · your move"
-            } else {
-                feedback ?: drillProgressLabel(
-                    currentPlyCount = currentPlyCount,
-                    line = line,
-                    madeMistake = madeMistake,
-                    completedViaShowLine = completedViaShowLine,
-                )
-            },
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = if (feedback == null && playoutFeedback == null) {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
-            } else {
-                MaterialTheme.colorScheme.secondary
-            },
-        )
+        if (!inPlayout && currentPlyCount >= line.plies.size) {
+            DrillCompletionBanner(
+                perfect = !madeMistake && !completedViaShowLine,
+                onPlayOut = { startPlayout() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Text(
+                text = if (inPlayout) {
+                    playoutFeedback ?: "playout · your move"
+                } else {
+                    feedback ?: drillProgressLabel(
+                        currentPlyCount = currentPlyCount,
+                        line = line,
+                        madeMistake = madeMistake,
+                        completedViaShowLine = completedViaShowLine,
+                    )
+                },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (feedback == null && playoutFeedback == null) {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                },
+            )
+        }
 
         MoveListFlow(
             plies = visibleMoveList,
@@ -2033,46 +2074,39 @@ fun DrillScreen(
             ) {
                 Text(if (showLineIsPlaying) "pause" else "show line")
             }
-            TextButton(
-                onClick = {
-                    val handle = SharedCoreBridge.createSharedPlayoutSession(
-                        currentPositionFen,
-                        opening.side.toSharedDrillUserSide(),
-                        settingsStore.engineLevel,
-                        settingsStore.moveAnalysisDepth,
-                    )
-                    if (handle == 0L) {
-                        feedback = "Playout unavailable"
-                    } else {
-                        playoutHandle = handle
-                        playoutStartFen = currentPositionFen
-                        SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
-                        playoutPositionFen = sharedPlayoutPositionFen(handle, currentPositionFen)
-                        drillSnapshotStore.savePlayout(
-                            opening = opening,
-                            line = line,
-                            positionFen = playoutPositionFen ?: currentPositionFen,
-                            startingFen = currentPositionFen,
-                            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(handle).orEmpty(),
-                            madeMistake = madeMistake,
-                            engineLevel = settingsStore.engineLevel,
-                        )
-                        playoutSelectedSquare = null
-                        pendingPromotion = null
-                        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
-                        moveQualityAnnotation = null
-                        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
-                        playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
-                    }
-                },
-                enabled = currentPlyCount >= line.plies.size,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("continue with engine")
-            }
         }
 
         Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun DrillCompletionBanner(
+    perfect: Boolean,
+    onPlayOut: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFFE8F4EC),
+        border = BorderStroke(1.dp, Color(0xFF87B697)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (perfect) "perfect" else "line complete",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF28613A),
+            )
+            Button(onClick = onPlayOut) {
+                Text("play it out")
+            }
+        }
     }
 }
 

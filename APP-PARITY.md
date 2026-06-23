@@ -39,10 +39,8 @@ expected to differ by platform.
   - Show capture target indicators.
   - Animate pieces moving between squares.
 - Drill completion polish:
-  - Show the richer completion banner used by Apple.
   - Show the speedy run badge.
   - Fire confetti when a line first becomes learned.
-  - Provide the inline "play it out" completion action.
 
 ## Missing From iPhone
 

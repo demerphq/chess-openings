@@ -1,5 +1,7 @@
 package com.chessopenings.app
 
+import android.content.SharedPreferences
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 
@@ -105,6 +108,82 @@ data class DrillSelection(
     val opening: OpeningSummary,
     val line: LineSummary,
 )
+
+data class LineProgressSummary(
+    val correctStreak: Int = 0,
+    val isLearned: Boolean = false,
+    val timesAttempted: Int = 0,
+    val timesCompleted: Int = 0,
+)
+
+class AndroidProgressStore(private val preferences: SharedPreferences) {
+    fun lineProgress(
+        opening: OpeningSummary,
+        line: LineSummary,
+    ): LineProgressSummary {
+        val prefix = progressKey(opening, line)
+        return LineProgressSummary(
+            correctStreak = preferences.getInt("$prefix.correctStreak", 0),
+            isLearned = preferences.getBoolean("$prefix.isLearned", false),
+            timesAttempted = preferences.getInt("$prefix.timesAttempted", 0),
+            timesCompleted = preferences.getInt("$prefix.timesCompleted", 0),
+        )
+    }
+
+    fun learnedLineCount(opening: OpeningSummary): Int =
+        opening.lines.count { lineProgress(opening, it).isLearned }
+
+    fun recordCompletion(
+        opening: OpeningSummary,
+        line: LineSummary,
+        madeMistake: Boolean,
+        threshold: Int = MASTERY_THRESHOLD,
+    ) {
+        val current = lineProgress(opening, line)
+        val next = recordCompletionProgress(current, madeMistake, threshold)
+        val prefix = progressKey(opening, line)
+        preferences.edit()
+            .putInt("$prefix.correctStreak", next.correctStreak)
+            .putBoolean("$prefix.isLearned", next.isLearned)
+            .putInt("$prefix.timesAttempted", next.timesAttempted)
+            .putInt("$prefix.timesCompleted", next.timesCompleted)
+            .apply()
+    }
+}
+
+fun recordCompletionProgress(
+    current: LineProgressSummary,
+    madeMistake: Boolean,
+    threshold: Int,
+): LineProgressSummary {
+    val nextStreak = if (madeMistake) 0 else current.correctStreak + 1
+    return current.copy(
+        correctStreak = nextStreak,
+        isLearned = current.isLearned || nextStreak >= threshold,
+        timesAttempted = current.timesAttempted + 1,
+        timesCompleted = current.timesCompleted + 1,
+    )
+}
+
+fun progressKey(
+    opening: OpeningSummary,
+    line: LineSummary,
+): String {
+    val identity = listOf(
+        opening.name,
+        opening.eco,
+        opening.side,
+        line.source,
+        line.name,
+        line.plies.joinToString(separator = " ") { "${it.san}:${it.uci}" },
+    ).joinToString(separator = "\u001F")
+    return "line.${sha256Hex(identity)}"
+}
+
+private fun sha256Hex(value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
 
 enum class AppTab(
     val title: String,
@@ -159,6 +238,12 @@ fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
 @Composable
 fun ChessOpeningsApp() {
     val context = LocalContext.current
+    val progressStore = remember {
+        AndroidProgressStore(
+            context.getSharedPreferences("line-progress", Context.MODE_PRIVATE),
+        )
+    }
+    var progressRevision by remember { mutableIntStateOf(0) }
     remember {
         check(SharedCoreBridge.isChessKitAvailable()) {
             "Shared ChessOpeningsCore bridge is unavailable"
@@ -194,13 +279,23 @@ fun ChessOpeningsApp() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            ChessOpeningsHome(openings)
+            ChessOpeningsHome(
+                openings = openings,
+                progressStore = progressStore,
+                progressRevision = progressRevision,
+                onProgressChanged = { progressRevision += 1 },
+            )
         }
     }
 }
 
 @Composable
-fun ChessOpeningsHome(openings: List<OpeningSummary>) {
+fun ChessOpeningsHome(
+    openings: List<OpeningSummary>,
+    progressStore: AndroidProgressStore,
+    progressRevision: Int,
+    onProgressChanged: () -> Unit,
+) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
     var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
     var detailOpening by remember { mutableStateOf<OpeningSummary?>(null) }
@@ -209,6 +304,8 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
         DrillScreen(
             opening = selection.opening,
             line = selection.line,
+            progressStore = progressStore,
+            onProgressChanged = onProgressChanged,
             onBack = { drillSelection = null },
         )
         return
@@ -230,12 +327,16 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
                 OpeningCatalogue(
                     openings = openings,
                     tab = selectedTab,
+                    progressStore = progressStore,
+                    progressRevision = progressRevision,
                     onOpeningSelected = { detailOpening = it },
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 OpeningDetailScreen(
                     opening = opening,
+                    progressStore = progressStore,
+                    progressRevision = progressRevision,
                     onBack = { detailOpening = null },
                     onStartDrill = { line ->
                         drillSelection = DrillSelection(opening, line)
@@ -272,6 +373,8 @@ fun ChessOpeningsHome(openings: List<OpeningSummary>) {
 fun OpeningCatalogue(
     openings: List<OpeningSummary>,
     tab: AppTab,
+    progressStore: AndroidProgressStore,
+    progressRevision: Int,
     onOpeningSelected: (OpeningSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -295,6 +398,8 @@ fun OpeningCatalogue(
                         title = "as white",
                         openings = indexedOpenings.filter { it.second.side == "white" },
                         showProgress = true,
+                        progressStore = progressStore,
+                        progressRevision = progressRevision,
                         onOpeningSelected = onOpeningSelected,
                     )
 
@@ -302,6 +407,8 @@ fun OpeningCatalogue(
                         title = "as black",
                         openings = indexedOpenings.filter { it.second.side == "black" },
                         showProgress = true,
+                        progressStore = progressStore,
+                        progressRevision = progressRevision,
                         onOpeningSelected = onOpeningSelected,
                     )
                 }
@@ -311,6 +418,8 @@ fun OpeningCatalogue(
                         title = "seed openings",
                         openings = indexedOpenings.filter { it.second.isSeed },
                         showProgress = false,
+                        progressStore = progressStore,
+                        progressRevision = progressRevision,
                         onOpeningSelected = onOpeningSelected,
                     )
 
@@ -325,9 +434,13 @@ fun OpeningCatalogue(
                     } else {
                         itemsIndexed(customOpenings) { _, indexedOpening ->
                             val (_, opening) = indexedOpening
+                            val learned = remember(progressRevision, opening) {
+                                progressStore.learnedLineCount(opening)
+                            }
                             OpeningRow(
                                 opening = opening,
                                 showProgress = false,
+                                learned = learned,
                                 onClick = { onOpeningSelected(opening) },
                             )
                         }
@@ -366,6 +479,8 @@ fun CatalogueHeader(
 @Composable
 fun OpeningDetailScreen(
     opening: OpeningSummary,
+    progressStore: AndroidProgressStore,
+    progressRevision: Int,
     onBack: () -> Unit,
     onStartDrill: (LineSummary) -> Unit,
     modifier: Modifier = Modifier,
@@ -431,13 +546,19 @@ fun OpeningDetailScreen(
 
         detailLineSection(
             title = "master games",
+            opening = opening,
             lines = opening.lines.filter { it.source == "masters" },
+            progressStore = progressStore,
+            progressRevision = progressRevision,
             onStartDrill = onStartDrill,
         )
 
         detailLineSection(
             title = "online play (2200+)",
+            opening = opening,
             lines = opening.lines.filter { it.source == "open" },
+            progressStore = progressStore,
+            progressRevision = progressRevision,
             onStartDrill = onStartDrill,
         )
     }
@@ -447,6 +568,8 @@ fun OpeningDetailScreen(
 fun DrillScreen(
     opening: OpeningSummary,
     line: LineSummary,
+    progressStore: AndroidProgressStore,
+    onProgressChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
@@ -458,6 +581,8 @@ fun DrillScreen(
     var hintShown by remember(line) { mutableStateOf(false) }
     var solutionShown by remember(line) { mutableStateOf(false) }
     var showLineIsPlaying by remember(line) { mutableStateOf(false) }
+    var madeMistake by remember(line) { mutableStateOf(false) }
+    var completionRecorded by remember(line) { mutableStateOf(false) }
     val visiblePlies = line.plies.take(currentPlyCount)
     val board = remember(currentPositionFen, visiblePlies) {
         boardSquaresFromFen(
@@ -480,6 +605,8 @@ fun DrillScreen(
         hintShown = false
         solutionShown = false
         showLineIsPlaying = false
+        madeMistake = false
+        completionRecorded = false
         onDispose {
             if (handle != 0L) {
                 SharedCoreBridge.releaseSharedDrillSession(handle)
@@ -504,6 +631,19 @@ fun DrillScreen(
             solutionShown = false
             if (outcome != SHARED_DRILL_ACCEPTED && outcome != SHARED_DRILL_LINE_COMPLETE) {
                 showLineIsPlaying = false
+            }
+            if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
+                recordDrillCompletionIfNeeded(
+                    progressStore = progressStore,
+                    opening = opening,
+                    line = line,
+                    madeMistake = madeMistake,
+                    alreadyRecorded = completionRecorded,
+                    onRecorded = {
+                        completionRecorded = true
+                        onProgressChanged()
+                    },
+                )
             }
         }
         if (currentPlyCount >= line.plies.size) {
@@ -569,6 +709,19 @@ fun DrillScreen(
                             val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
                             currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
                             currentPositionFen = snapshot.positionFen
+                            if (currentPlyCount >= line.plies.size) {
+                                recordDrillCompletionIfNeeded(
+                                    progressStore = progressStore,
+                                    opening = opening,
+                                    line = line,
+                                    madeMistake = madeMistake,
+                                    alreadyRecorded = completionRecorded,
+                                    onRecorded = {
+                                        completionRecorded = true
+                                        onProgressChanged()
+                                    },
+                                )
+                            }
                             selectedSquare = null
                             feedback = null
                             hintShown = false
@@ -577,6 +730,7 @@ fun DrillScreen(
                         }
 
                         SHARED_DRILL_INCORRECT -> {
+                            madeMistake = true
                             selectedSquare = coordinate
                             feedback = expectedMoveFeedback(nextPly)
                             solutionShown = true
@@ -645,6 +799,8 @@ fun DrillScreen(
                     val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = initialPlyCount)
                     currentPlyCount = snapshot.plyIndex.coerceAtLeast(initialPlyCount)
                     currentPositionFen = snapshot.positionFen
+                    madeMistake = false
+                    completionRecorded = false
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -661,6 +817,8 @@ fun DrillScreen(
                     val snapshot = resetSharedDrillForOpening(sharedDrillHandle, opening)
                     currentPlyCount = snapshot.plyIndex
                     currentPositionFen = snapshot.positionFen
+                    madeMistake = false
+                    completionRecorded = false
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -824,9 +982,9 @@ fun BoardSquareCell(
 fun OpeningRow(
     opening: OpeningSummary,
     showProgress: Boolean,
+    learned: Int,
     onClick: () -> Unit,
 ) {
-    val learned = 0
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -887,10 +1045,11 @@ fun OpeningRow(
 @Composable
 fun LineRow(
     line: LineSummary,
+    progress: LineProgressSummary,
     onClick: () -> Unit,
 ) {
-    val streak = 0
-    val threshold = 3
+    val streak = progress.correctStreak
+    val threshold = MASTERY_THRESHOLD
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -917,20 +1076,28 @@ fun LineRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ProgressBar(
-                    current = streak,
-                    total = threshold,
-                    modifier = Modifier.width(60.dp),
-                )
+            if (progress.isLearned) {
                 Text(
-                    text = "$streak/$threshold",
+                    text = "learned · streak $streak",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    color = MaterialTheme.colorScheme.primary,
                 )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ProgressBar(
+                        current = streak,
+                        total = threshold,
+                        modifier = Modifier.width(60.dp),
+                    )
+                    Text(
+                        text = "$streak/$threshold",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    )
+                }
             }
         }
     }
@@ -962,7 +1129,10 @@ fun ProgressBar(
 
 private fun LazyListScope.detailLineSection(
     title: String,
+    opening: OpeningSummary,
     lines: List<LineSummary>,
+    progressStore: AndroidProgressStore,
+    progressRevision: Int,
     onStartDrill: (LineSummary) -> Unit,
 ) {
     if (lines.isEmpty()) return
@@ -972,8 +1142,12 @@ private fun LazyListScope.detailLineSection(
     }
 
     itemsIndexed(lines) { _, line ->
+        val progress = remember(progressRevision, opening, line) {
+            progressStore.lineProgress(opening, line)
+        }
         LineRow(
             line = line,
+            progress = progress,
             onClick = { onStartDrill(line) },
         )
     }
@@ -983,6 +1157,8 @@ private fun LazyListScope.openingSection(
     title: String,
     openings: List<Pair<Int, OpeningSummary>>,
     showProgress: Boolean,
+    progressStore: AndroidProgressStore,
+    progressRevision: Int,
     onOpeningSelected: (OpeningSummary) -> Unit,
 ) {
     if (openings.isEmpty()) return
@@ -993,9 +1169,13 @@ private fun LazyListScope.openingSection(
 
     itemsIndexed(openings) { _, indexedOpening ->
         val (_, opening) = indexedOpening
+        val learned = remember(progressRevision, opening) {
+            progressStore.learnedLineCount(opening)
+        }
         OpeningRow(
             opening = opening,
             showProgress = showProgress,
+            learned = learned,
             onClick = { onOpeningSelected(opening) },
         )
     }
@@ -1255,6 +1435,23 @@ fun showLineNextPlyCount(
 ): Int =
     (currentPlyCount + 1).coerceAtMost(line.plies.size)
 
+fun recordDrillCompletionIfNeeded(
+    progressStore: AndroidProgressStore,
+    opening: OpeningSummary,
+    line: LineSummary,
+    madeMistake: Boolean,
+    alreadyRecorded: Boolean,
+    onRecorded: () -> Unit,
+) {
+    if (alreadyRecorded) return
+    progressStore.recordCompletion(
+        opening = opening,
+        line = line,
+        madeMistake = madeMistake,
+    )
+    onRecorded()
+}
+
 data class SharedDrillSnapshot(
     val plyIndex: Int,
     val positionFen: String,
@@ -1456,4 +1653,5 @@ private fun JSONObject.optStringList(name: String): List<String> {
 private const val SHARED_DRILL_ACCEPTED = 1
 private const val SHARED_DRILL_INCORRECT = 2
 private const val SHARED_DRILL_LINE_COMPLETE = 5
+private const val MASTERY_THRESHOLD = 3
 private const val STARTING_POSITION_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

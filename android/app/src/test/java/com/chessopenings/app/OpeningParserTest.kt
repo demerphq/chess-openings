@@ -235,6 +235,36 @@ class OpeningParserTest {
     }
 
     @Test
+    fun recordsCompletionProgressWithStickyLearnedState() {
+        val first = recordCompletionProgress(LineProgressSummary(), madeMistake = false, threshold = 3)
+        val second = recordCompletionProgress(first, madeMistake = false, threshold = 3)
+        val learned = recordCompletionProgress(second, madeMistake = false, threshold = 3)
+        val afterMistake = recordCompletionProgress(learned, madeMistake = true, threshold = 3)
+
+        assertEquals(1, first.correctStreak)
+        assertEquals(false, first.isLearned)
+        assertEquals(3, learned.correctStreak)
+        assertEquals(true, learned.isLearned)
+        assertEquals(3, learned.timesAttempted)
+        assertEquals(3, learned.timesCompleted)
+        assertEquals(0, afterMistake.correctStreak)
+        assertEquals(true, afterMistake.isLearned)
+        assertEquals(4, afterMistake.timesAttempted)
+        assertEquals(4, afterMistake.timesCompleted)
+    }
+
+    @Test
+    fun buildsStableProgressKeysFromOpeningAndLineIdentity() {
+        val line = sampleDrillLine()
+        val opening = sampleOpening(side = "white", line = line)
+        val same = sampleOpening(side = "white", line = line)
+        val other = sampleOpening(side = "black", line = line)
+
+        assertEquals(progressKey(opening, line), progressKey(same, line))
+        assertEquals(false, progressKey(opening, line) == progressKey(other, line))
+    }
+
+    @Test
     fun restrictsDrillStartSquareToExpectedUserPiece() {
         val line = sampleDrillLine()
         val startingBoard = boardSquaresAfterPlies(emptyList())

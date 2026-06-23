@@ -1584,7 +1584,11 @@ fun DrillScreen(
                 TextButton(
                     onClick = {
                         val status = SharedCoreBridge.offerSharedPlayoutDraw(playoutHandle)
-                        playoutFeedback = playoutStatusLabel(status)
+                        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                            "draw agreed"
+                        } else {
+                            playoutStatusLabel(status)
+                        }
                         if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
                             drillSnapshotStore.clear()
                         }
@@ -1597,7 +1601,11 @@ fun DrillScreen(
                 TextButton(
                     onClick = {
                         val status = SharedCoreBridge.resignSharedPlayout(playoutHandle)
-                        playoutFeedback = playoutStatusLabel(status)
+                        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                            "you resigned"
+                        } else {
+                            playoutStatusLabel(status)
+                        }
                         if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
                             drillSnapshotStore.clear()
                         }

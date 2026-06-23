@@ -2248,8 +2248,8 @@ fun BoardSquareCell(
     val background = when {
         selected -> Color(0xFF6EA4B8)
         solution -> Color(0xFF88B6D8)
-        hinted -> Color(0xFF92BE74)
-        square.highlighted -> Color(0xFFB9C86B)
+        hinted -> Color(0xFF88B6D8)
+        square.highlighted -> Color(0xFFF2E29B)
         else -> baseColor
     }
 

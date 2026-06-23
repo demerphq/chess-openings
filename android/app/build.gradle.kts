@@ -4,6 +4,7 @@ plugins {
 }
 
 val generatedAssetsDir = layout.buildDirectory.dir("generated/assets/main").get().asFile
+val generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs/main").get().asFile
 
 android {
     namespace = "com.chessopenings.app"
@@ -23,25 +24,42 @@ android {
         compose = true
     }
 
-    sourceSets["main"].assets.srcDir(generatedAssetsDir)
+    sourceSets["main"].apply {
+        assets.srcDir(generatedAssetsDir)
+        jniLibs.srcDir(generatedJniLibsDir)
+    }
 
     androidResources {
         noCompress += "nnue"
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
 }
 
 val syncSharedSeedAssets = tasks.register<Sync>("syncSharedSeedAssets") {
     from(rootProject.file("../Chess Openings/Resources/openings.json"))
     from(rootProject.file("stockfish")) {
-        include("*/stockfish")
         include("nnue/*.nnue")
         into("stockfish")
     }
     into(generatedAssetsDir)
 }
 
+val syncStockfishNativeExecutables = tasks.register<Sync>("syncStockfishNativeExecutables") {
+    listOf("arm64-v8a", "x86_64").forEach { abi ->
+        from(rootProject.file("stockfish/$abi/stockfish")) {
+            into(abi)
+            rename { "libstockfish.so" }
+        }
+    }
+    into(generatedJniLibsDir)
+}
+
 tasks.named("preBuild") {
     dependsOn(syncSharedSeedAssets)
+    dependsOn(syncStockfishNativeExecutables)
 }
 
 dependencies {

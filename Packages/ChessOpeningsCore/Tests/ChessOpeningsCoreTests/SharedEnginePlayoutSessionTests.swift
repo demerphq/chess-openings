@@ -142,6 +142,26 @@ import Testing
     #expect(session.positionFEN == Position.standard.fen)
 }
 
+@Test func sharedPlayoutAcceptsMoveAfterRestoringEmptyHistory() async throws {
+    let startingFEN = "r1bqr1k1/ppp1bppp/2np1n2/8/2BNP3/2N5/PPP2PPP/R1BQR1K1 w - - 7 9"
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: startingFEN,
+        userSide: .white,
+        engine: FakeSharedEngineService()
+    )
+
+    #expect(session.restore(moves: []))
+    #expect(session.status == .waitingForUser)
+
+    let outcome = await session.submit(uci: "c4b5")
+
+    guard case .accepted(let userMove, _) = outcome else {
+        Issue.record("expected accepted outcome, got \(outcome)")
+        return
+    }
+    #expect(userMove.uci == "c4b5")
+}
+
 @Test func sharedPlayoutRestoreRejectsWrongSideUserMove() async throws {
     let session = try SharedEnginePlayoutSession(
         startingFEN: Position.standard.fen,

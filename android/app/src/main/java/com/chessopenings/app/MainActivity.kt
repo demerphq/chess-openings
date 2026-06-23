@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
@@ -66,6 +65,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,6 +100,9 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -126,20 +129,10 @@ object AndroidStockfishAssets {
     private const val ASSET_ROOT = "stockfish"
 
     fun prepare(context: Context): AndroidStockfishAssetConfig {
-        val assets = context.assets
-        val abi = Build.SUPPORTED_ABIS.firstOrNull { candidate ->
-            runCatching {
-                assets.list("$ASSET_ROOT/$candidate")
-                    ?.contains("stockfish") == true
-            }.getOrDefault(false)
-        }
-
-        val stockfishPath = abi?.let { selectedAbi ->
-            val target = File(context.filesDir, "$ASSET_ROOT/$selectedAbi/stockfish")
-            copyAssetIfNeeded(context, "$ASSET_ROOT/$selectedAbi/stockfish", target)
-            target.setExecutable(true, true)
-            target.absolutePath.takeIf { target.canExecute() }
-        }
+        val stockfishPath = File(
+            context.applicationInfo.nativeLibraryDir,
+            "libstockfish.so",
+        ).takeIf { it.isFile && it.canExecute() }?.absolutePath
 
         val nnueDirectory = if (stockfishPath != null) {
             val directory = File(context.filesDir, "$ASSET_ROOT/nnue")
@@ -1397,9 +1390,11 @@ fun DrillScreen(
     var pendingPlayoutConfirmation by remember(line) { mutableStateOf<PlayoutConfirmationAction?>(null) }
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
+    var playoutMovePending by remember(line) { mutableStateOf(false) }
     var engineResignationState by remember(line) {
         mutableIntStateOf(SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE)
     }
+    val coroutineScope = rememberCoroutineScope()
     val inPlayout = playoutHandle != 0L
     val visiblePlies = line.plies.take(currentPlyCount)
     val visibleMoveList = visiblePlies + playoutMoves.map { it.toPlySummary() }
@@ -1474,6 +1469,7 @@ fun DrillScreen(
         pendingPlayoutConfirmation = null
         playoutMoves = emptyList()
         moveQualityAnnotation = null
+        playoutMovePending = false
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredStartFen = restoredSnapshot.playoutStartFen
@@ -1506,15 +1502,12 @@ fun DrillScreen(
             if (sharedDrillHandle == handle) {
                 sharedDrillHandle = 0L
             }
-            if (playoutHandle != 0L) {
-                SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
-                playoutHandle = 0L
-            }
         }
     }
 
-    DisposableEffect(playoutHandle) {
-        val handle = playoutHandle
+    val effectPlayoutHandle = playoutHandle
+    DisposableEffect(effectPlayoutHandle) {
+        val handle = effectPlayoutHandle
         onDispose {
             if (handle != 0L) {
                 SharedCoreBridge.releaseSharedPlayoutSession(handle)
@@ -1523,38 +1516,48 @@ fun DrillScreen(
     }
 
     fun submitPlayoutMove(playedUci: String) {
+        if (playoutMovePending || playoutHandle == 0L) return
         pendingPromotion = null
-        when (SharedCoreBridge.submitSharedPlayoutMove(playoutHandle, playedUci)) {
-            SHARED_PLAYOUT_ACCEPTED, SHARED_PLAYOUT_GAME_OVER -> {
-                playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, displayedPositionFen)
-                drillSnapshotStore.savePlayout(
-                    opening = opening,
-                    line = line,
-                    positionFen = playoutPositionFen ?: displayedPositionFen,
-                    startingFen = playoutStartFen ?: currentPositionFen,
-                    movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
-                    madeMistake = madeMistake,
-                    engineLevel = settingsStore.engineLevel,
-                )
-                playMoveSound(settingsStore, soundPlayer)
-                playoutSelectedSquare = null
-                playoutMoves = parseSharedPlayoutMoves(
-                    SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle),
-                )
-                moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
-                engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
-                playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
+        playoutMovePending = true
+        playoutSelectedSquare = null
+        playoutFeedback = "engine thinking"
+        val submittedHandle = playoutHandle
+        val fallbackFen = displayedPositionFen
+        coroutineScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                SharedCoreBridge.submitSharedPlayoutMove(submittedHandle, playedUci)
             }
+            if (playoutHandle != submittedHandle) return@launch
+            playoutMovePending = false
+            when (outcome) {
+                SHARED_PLAYOUT_ACCEPTED, SHARED_PLAYOUT_GAME_OVER -> {
+                    playoutPositionFen = sharedPlayoutPositionFen(submittedHandle, fallbackFen)
+                    drillSnapshotStore.savePlayout(
+                        opening = opening,
+                        line = line,
+                        positionFen = playoutPositionFen ?: fallbackFen,
+                        startingFen = playoutStartFen ?: currentPositionFen,
+                        movesJson = SharedCoreBridge.sharedPlayoutMovesJson(submittedHandle).orEmpty(),
+                        madeMistake = madeMistake,
+                        engineLevel = settingsStore.engineLevel,
+                    )
+                    playMoveSound(settingsStore, soundPlayer)
+                    playoutMoves = parseSharedPlayoutMoves(
+                        SharedCoreBridge.sharedPlayoutMovesJson(submittedHandle),
+                    )
+                    moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
+                    engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(submittedHandle)
+                    playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(submittedHandle))
+                }
 
-            SHARED_PLAYOUT_ILLEGAL_MOVE -> {
-                playWrongMoveSound(settingsStore, soundPlayer)
-                playoutSelectedSquare = null
-                playoutFeedback = "Illegal move"
-            }
+                SHARED_PLAYOUT_ILLEGAL_MOVE -> {
+                    playWrongMoveSound(settingsStore, soundPlayer)
+                    playoutFeedback = "Illegal move"
+                }
 
-            else -> {
-                playoutSelectedSquare = null
-                playoutFeedback = "Move unavailable"
+                else -> {
+                    playoutFeedback = "Move unavailable"
+                }
             }
         }
     }
@@ -1673,7 +1676,6 @@ fun DrillScreen(
     }
 
     fun exitPlayout() {
-        SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
         playoutHandle = 0L
         playoutStartFen = null
         playoutPositionFen = null
@@ -1683,6 +1685,7 @@ fun DrillScreen(
         pendingPlayoutConfirmation = null
         playoutMoves = emptyList()
         moveQualityAnnotation = null
+        playoutMovePending = false
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
         drillSnapshotStore.clear()
     }
@@ -1752,6 +1755,7 @@ fun DrillScreen(
         pendingPromotion = null
         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
         moveQualityAnnotation = null
+        playoutMovePending = false
         engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
         playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
     }
@@ -1939,7 +1943,9 @@ fun DrillScreen(
                 boardArrow = boardArrow,
                 moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
                 canDragCoordinate = { coordinate ->
-                    if (inPlayout) {
+                    if (playoutMovePending) {
+                        false
+                    } else if (inPlayout) {
                         canStartPlayoutMove(coordinate, board, opening.side)
                     } else {
                         canStartDrillMove(coordinate, board, nextPly, opening.side)
@@ -1956,6 +1962,7 @@ fun DrillScreen(
                 },
                 onSquareClick = { coordinate ->
                     if (inPlayout) {
+                        if (playoutMovePending) return@BoardGrid
                         val selected = playoutSelectedSquare
                         if (selected == null) {
                             if (canStartPlayoutMove(coordinate, board, opening.side)) {

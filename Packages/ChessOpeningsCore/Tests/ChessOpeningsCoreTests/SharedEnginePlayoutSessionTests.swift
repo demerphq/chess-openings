@@ -70,6 +70,21 @@ import Testing
     #expect(session.moves.map(\.byUser) == [false])
 }
 
+@Test func sharedPlayoutReturnsFullStrengthHintWhileWaitingForUser() async throws {
+    let engine = FakeSharedEngineService(bestMoves: ["e2e4"])
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+
+    let hint = await session.bestMoveHint()
+
+    #expect(hint?.uci == "e2e4")
+    #expect(engine.lastSkill == 20)
+    #expect(engine.lastBudget == .depth(12))
+}
+
 @Test func sharedPlayoutRejectsIllegalMoveWithoutAdvancing() async throws {
     let session = try SharedEnginePlayoutSession(
         startingFEN: Position.standard.fen,
@@ -309,6 +324,7 @@ private final class FakeSharedEngineService: SharedEngineServicing {
     private(set) var bestMoveCalls = 0
     private(set) var evaluateCalls = 0
     private(set) var lastSkill: Int?
+    private(set) var lastBudget: SharedSearchBudget?
 
     init(
         bestMoves: [String] = [],
@@ -327,6 +343,7 @@ private final class FakeSharedEngineService: SharedEngineServicing {
     ) async -> SharedEngineDecision? {
         bestMoveCalls += 1
         lastSkill = skill
+        lastBudget = budget
         guard !bestMoves.isEmpty else { return nil }
         let evaluation = evaluations.isEmpty ? nil : evaluations.removeFirst()
         return SharedEngineDecision(

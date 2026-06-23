@@ -198,6 +198,15 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         _ = await playEngineReply()
     }
 
+    public func bestMoveHint() async -> SharedEngineMove? {
+        guard status == .waitingForUser else { return nil }
+        return await engine.bestMove(
+            at: board.position,
+            skill: 20,
+            budget: .depth(12)
+        )?.move
+    }
+
     public func submit(uci: String) async -> SharedPlayoutSubmitOutcome {
         guard status == .waitingForUser else {
             if case .gameOver(let reason) = status {

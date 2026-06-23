@@ -27,6 +27,7 @@ extern void chess_openings_core_shared_drill_release(int64_t handle);
 extern int64_t chess_openings_core_shared_playout_create(const char *starting_fen, int32_t user_side, int32_t engine_skill, int32_t move_analysis_depth);
 extern int32_t chess_openings_core_shared_playout_bootstrap(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_submit(int64_t handle, const char *uci);
+extern int32_t chess_openings_core_shared_playout_best_move(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_position_fen(int64_t handle, char *buffer, int32_t capacity);
@@ -371,6 +372,32 @@ Java_com_chessopenings_app_SharedCoreBridge_submitSharedPlayoutMove(
     (void)handle;
     (void)uci;
     return -1;
+#endif
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutBestMove(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    char buffer[16];
+    int32_t length = chess_openings_core_shared_playout_best_move(
+        (int64_t)handle,
+        buffer,
+        (int32_t)sizeof(buffer)
+    );
+    if (length < 0) {
+        return 0;
+    }
+    return (*env)->NewStringUTF(env, buffer);
+#else
+    (void)env;
+    (void)receiver;
+    (void)handle;
+    return 0;
 #endif
 }
 

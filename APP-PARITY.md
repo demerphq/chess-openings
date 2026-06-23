@@ -29,10 +29,6 @@ expected to differ by platform.
   - Delete custom openings.
   - Add a custom SAN line to a custom opening.
   - Validate custom SAN input and show parse/illegal-move errors.
-- Playout best-move hints:
-  - Ask Stockfish for the best move while in engine playout.
-  - Show a playout hint source square.
-  - Show a playout best-move arrow/solution.
 
 ## Missing From iPhone
 

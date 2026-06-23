@@ -6,9 +6,6 @@
   then combine that catalogue with game data to build a statistical picture of
   opening moves. This should eventually replace the current bespoke seed builder
   inputs and generated `Chess Openings/Resources/openings.json` workflow.
-- Add Android playout best-move hint arrows once the shared bridge exposes
-  Stockfish hint retrieval, matching the Apple playout hint and solution
-  behavior.
 - Design and add a contention heatmap board view that shows how many pieces
   threaten each square and highlights imbalances between the two sides. Define
   a clear visual treatment that remains readable alongside pieces and existing

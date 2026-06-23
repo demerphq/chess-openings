@@ -1391,6 +1391,8 @@ fun DrillScreen(
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
     var playoutMovePending by remember(line) { mutableStateOf(false) }
+    var playoutHintPending by remember(line) { mutableStateOf(false) }
+    var playoutHintUci by remember(line) { mutableStateOf<String?>(null) }
     var engineResignationState by remember(line) {
         mutableIntStateOf(SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE)
     }
@@ -1420,10 +1422,25 @@ fun DrillScreen(
         )
     }
     val nextPly = if (inPlayout) null else line.plies.getOrNull(currentPlyCount)
-    val hintCoordinate = if (hintShown && !solutionShown) nextPly?.fromCoordinate() else null
-    val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
-    val boardArrow = if (inPlayout) {
+    val hintCoordinate = if (inPlayout) {
+        playoutHintUci
+            ?.takeIf { hintShown && !solutionShown }
+            ?.take(2)
+            ?.takeIf { it.isBoardCoordinate() }
+    } else if (hintShown && !solutionShown) {
+        nextPly?.fromCoordinate()
+    } else {
         null
+    }
+    val solutionCoordinates = if (inPlayout) {
+        if (solutionShown) highlightedSquaresForUci(playoutHintUci.orEmpty()) else emptySet()
+    } else if (solutionShown) {
+        nextPly?.moveCoordinates().orEmpty()
+    } else {
+        emptySet()
+    }
+    val boardArrow = if (inPlayout) {
+        if (solutionShown) boardArrowFromUci(playoutHintUci.orEmpty()) else null
     } else if (solutionShown) {
         nextPly?.boardArrow()
     } else {
@@ -1470,6 +1487,8 @@ fun DrillScreen(
         playoutMoves = emptyList()
         moveQualityAnnotation = null
         playoutMovePending = false
+        playoutHintPending = false
+        playoutHintUci = null
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredStartFen = restoredSnapshot.playoutStartFen
@@ -1516,8 +1535,11 @@ fun DrillScreen(
     }
 
     fun submitPlayoutMove(playedUci: String) {
-        if (playoutMovePending || playoutHandle == 0L) return
+        if (playoutMovePending || playoutHintPending || playoutHandle == 0L) return
         pendingPromotion = null
+        hintShown = false
+        solutionShown = false
+        playoutHintUci = null
         playoutMovePending = true
         playoutSelectedSquare = null
         playoutFeedback = "engine thinking"
@@ -1558,6 +1580,27 @@ fun DrillScreen(
                 else -> {
                     playoutFeedback = "Move unavailable"
                 }
+            }
+        }
+    }
+
+    fun requestPlayoutHint() {
+        if (playoutHintPending || playoutMovePending || playoutHandle == 0L) return
+        playoutHintPending = true
+        playoutFeedback = "finding hint"
+        val requestedHandle = playoutHandle
+        val requestedFen = displayedPositionFen
+        coroutineScope.launch {
+            val hint = withContext(Dispatchers.IO) {
+                SharedCoreBridge.sharedPlayoutBestMove(requestedHandle)
+            }
+            if (playoutHandle != requestedHandle || displayedPositionFen != requestedFen) return@launch
+            playoutHintPending = false
+            playoutHintUci = hint?.takeIf { boardArrowFromUci(it) != null }
+            playoutFeedback = if (playoutHintUci == null) {
+                "Hint unavailable"
+            } else {
+                "playout · your move"
             }
         }
     }
@@ -1686,6 +1729,10 @@ fun DrillScreen(
         playoutMoves = emptyList()
         moveQualityAnnotation = null
         playoutMovePending = false
+        playoutHintPending = false
+        playoutHintUci = null
+        hintShown = false
+        solutionShown = false
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
         drillSnapshotStore.clear()
     }
@@ -1756,6 +1803,10 @@ fun DrillScreen(
         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
         moveQualityAnnotation = null
         playoutMovePending = false
+        playoutHintPending = false
+        playoutHintUci = null
+        hintShown = false
+        solutionShown = false
         engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
         playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
     }
@@ -1936,14 +1987,14 @@ fun DrillScreen(
                 board = board,
                 orientationSide = opening.side,
                 selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
-                hintCoordinate = if (inPlayout) null else hintCoordinate,
-                solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
+                hintCoordinate = hintCoordinate,
+                solutionCoordinates = solutionCoordinates,
                 legalTargetCoordinates = legalTargetCoordinates,
                 captureTargetCoordinates = captureTargetCoordinates,
                 boardArrow = boardArrow,
                 moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
                 canDragCoordinate = { coordinate ->
-                    if (playoutMovePending) {
+                    if (playoutMovePending || playoutHintPending) {
                         false
                     } else if (inPlayout) {
                         canStartPlayoutMove(coordinate, board, opening.side)
@@ -1962,7 +2013,7 @@ fun DrillScreen(
                 },
                 onSquareClick = { coordinate ->
                     if (inPlayout) {
-                        if (playoutMovePending) return@BoardGrid
+                        if (playoutMovePending || playoutHintPending) return@BoardGrid
                         val selected = playoutSelectedSquare
                         if (selected == null) {
                             if (canStartPlayoutMove(coordinate, board, opening.side)) {
@@ -2037,6 +2088,40 @@ fun DrillScreen(
             )
 
             if (inPlayout) {
+                TextButton(
+                    onClick = {
+                        when {
+                            !hintShown && !solutionShown -> {
+                                hintShown = true
+                                requestPlayoutHint()
+                            }
+
+                            hintShown -> {
+                                hintShown = false
+                                solutionShown = true
+                                if (playoutHintUci == null) requestPlayoutHint()
+                            }
+
+                            else -> {
+                                solutionShown = false
+                                playoutHintUci = null
+                            }
+                        }
+                    },
+                    enabled = !playoutMovePending &&
+                        !playoutHintPending &&
+                        SharedCoreBridge.sharedPlayoutStatus(playoutHandle) == SHARED_PLAYOUT_WAITING_STATUS,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        when {
+                            playoutHintPending -> "finding hint..."
+                            solutionShown -> "hide solution"
+                            hintShown -> "show solution"
+                            else -> "show hint"
+                        },
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2058,10 +2143,15 @@ fun DrillScreen(
                             pendingPromotion = null
                             playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
                             moveQualityAnnotation = null
+                            playoutHintUci = null
+                            hintShown = false
+                            solutionShown = false
                             engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
                             playoutFeedback = "playout · your move"
                         },
-                        enabled = SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
+                        enabled = !playoutMovePending &&
+                            !playoutHintPending &&
+                            SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("undo")
@@ -2079,14 +2169,18 @@ fun DrillScreen(
                 ) {
                     TextButton(
                         onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.OfferDraw },
-                        enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                        enabled = !playoutMovePending &&
+                            !playoutHintPending &&
+                            SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("offer draw")
                     }
                     TextButton(
                         onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Resign },
-                        enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                        enabled = !playoutMovePending &&
+                            !playoutHintPending &&
+                            SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("resign")
@@ -3932,6 +4026,7 @@ private const val SHARED_DRILL_USER_SIDE_BLACK = 1
 private const val SHARED_PLAYOUT_ACCEPTED = 1
 private const val SHARED_PLAYOUT_ILLEGAL_MOVE = 3
 private const val SHARED_PLAYOUT_GAME_OVER = 5
+private const val SHARED_PLAYOUT_WAITING_STATUS = 0
 private const val SHARED_PLAYOUT_ENGINE_THINKING_STATUS = 1
 private const val SHARED_PLAYOUT_GAME_OVER_STATUS = 3
 private const val SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE = 0

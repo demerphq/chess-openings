@@ -118,6 +118,9 @@ data class PersistedDrillSnapshot(
     val lineKey: String,
     val plyIndex: Int,
     val madeMistake: Boolean,
+    val phase: String = SNAPSHOT_PHASE_DRILL,
+    val playoutFen: String? = null,
+    val engineLevel: Int = DEFAULT_ENGINE_LEVEL,
 )
 
 data class LineProgressSummary(
@@ -281,6 +284,11 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
             lineKey = lineKey,
             plyIndex = preferences.getInt("active.plyIndex", 0),
             madeMistake = preferences.getBoolean("active.madeMistake", false),
+            phase = preferences.getString("active.phase", SNAPSHOT_PHASE_DRILL)
+                ?.takeIf { it == SNAPSHOT_PHASE_DRILL || it == SNAPSHOT_PHASE_PLAYOUT }
+                ?: SNAPSHOT_PHASE_DRILL,
+            playoutFen = preferences.getString("active.playoutFen", null)?.takeIf { it.isNotBlank() },
+            engineLevel = preferences.getInt("active.engineLevel", DEFAULT_ENGINE_LEVEL),
         )
     }
 
@@ -296,16 +304,39 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
         }
         preferences.edit()
             .putString("active.lineKey", progressKey(opening, line))
+            .putString("active.phase", SNAPSHOT_PHASE_DRILL)
             .putInt("active.plyIndex", plyIndex)
             .putBoolean("active.madeMistake", madeMistake)
+            .remove("active.playoutFen")
+            .remove("active.engineLevel")
+            .apply()
+    }
+
+    fun savePlayout(
+        opening: OpeningSummary,
+        line: LineSummary,
+        positionFen: String,
+        madeMistake: Boolean,
+        engineLevel: Int,
+    ) {
+        preferences.edit()
+            .putString("active.lineKey", progressKey(opening, line))
+            .putString("active.phase", SNAPSHOT_PHASE_PLAYOUT)
+            .putInt("active.plyIndex", line.plies.size)
+            .putBoolean("active.madeMistake", madeMistake)
+            .putString("active.playoutFen", positionFen)
+            .putInt("active.engineLevel", engineLevel.coerceIn(0, 20))
             .apply()
     }
 
     fun clear() {
         preferences.edit()
             .remove("active.lineKey")
+            .remove("active.phase")
             .remove("active.plyIndex")
             .remove("active.madeMistake")
+            .remove("active.playoutFen")
+            .remove("active.engineLevel")
             .apply()
     }
 }
@@ -1211,7 +1242,25 @@ fun DrillScreen(
         showLineIsPlaying = false
         madeMistake = restoredSnapshot?.madeMistake == true
         completedViaShowLine = false
-        completionRecorded = false
+        completionRecorded = restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT
+        playoutHandle = 0L
+        playoutPositionFen = null
+        playoutSelectedSquare = null
+        playoutFeedback = null
+        if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
+            val restoredFen = restoredSnapshot.playoutFen ?: snapshot.positionFen
+            val playout = SharedCoreBridge.createSharedPlayoutSession(
+                restoredFen,
+                opening.side.toSharedDrillUserSide(),
+                restoredSnapshot.engineLevel,
+            )
+            if (playout != 0L) {
+                SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
+                playoutHandle = playout
+                playoutPositionFen = sharedPlayoutPositionFen(playout, restoredFen)
+                playoutFeedback = "resumed playout"
+            }
+        }
         onDispose {
             if (handle != 0L) {
                 SharedCoreBridge.releaseSharedDrillSession(handle)
@@ -1222,6 +1271,15 @@ fun DrillScreen(
             if (playoutHandle != 0L) {
                 SharedCoreBridge.releaseSharedPlayoutSession(playoutHandle)
                 playoutHandle = 0L
+            }
+        }
+    }
+
+    DisposableEffect(playoutHandle) {
+        val handle = playoutHandle
+        onDispose {
+            if (handle != 0L) {
+                SharedCoreBridge.releaseSharedPlayoutSession(handle)
             }
         }
     }
@@ -1325,6 +1383,13 @@ fun DrillScreen(
                     when (SharedCoreBridge.submitSharedPlayoutMove(playoutHandle, playedUci)) {
                         SHARED_PLAYOUT_ACCEPTED, SHARED_PLAYOUT_GAME_OVER -> {
                             playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, displayedPositionFen)
+                            drillSnapshotStore.savePlayout(
+                                opening = opening,
+                                line = line,
+                                positionFen = playoutPositionFen ?: displayedPositionFen,
+                                madeMistake = madeMistake,
+                                engineLevel = settingsStore.engineLevel,
+                            )
                             playMoveSound(settingsStore, soundPlayer)
                             playoutSelectedSquare = null
                             playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
@@ -1449,6 +1514,13 @@ fun DrillScreen(
                     onClick = {
                         SharedCoreBridge.undoSharedPlayoutSession(playoutHandle)
                         playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, currentPositionFen)
+                        drillSnapshotStore.savePlayout(
+                            opening = opening,
+                            line = line,
+                            positionFen = playoutPositionFen ?: currentPositionFen,
+                            madeMistake = madeMistake,
+                            engineLevel = settingsStore.engineLevel,
+                        )
                         playoutSelectedSquare = null
                         playoutFeedback = "playout · your move"
                     },
@@ -1464,6 +1536,7 @@ fun DrillScreen(
                         playoutPositionFen = null
                         playoutSelectedSquare = null
                         playoutFeedback = null
+                        drillSnapshotStore.clear()
                     },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -1566,6 +1639,13 @@ fun DrillScreen(
                         playoutHandle = handle
                         SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
                         playoutPositionFen = sharedPlayoutPositionFen(handle, currentPositionFen)
+                        drillSnapshotStore.savePlayout(
+                            opening = opening,
+                            line = line,
+                            positionFen = playoutPositionFen ?: currentPositionFen,
+                            madeMistake = madeMistake,
+                            engineLevel = settingsStore.engineLevel,
+                        )
                         playoutSelectedSquare = null
                         playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
                     }
@@ -2489,6 +2569,8 @@ private const val SHARED_PLAYOUT_ILLEGAL_MOVE = 3
 private const val SHARED_PLAYOUT_GAME_OVER = 5
 private const val SHARED_PLAYOUT_ENGINE_THINKING_STATUS = 1
 private const val SHARED_PLAYOUT_GAME_OVER_STATUS = 3
+private const val SNAPSHOT_PHASE_DRILL = "drill"
+private const val SNAPSHOT_PHASE_PLAYOUT = "playout"
 private const val DRILL_MODE_STRICT = "strict"
 private const val DRILL_MODE_SHOW_AND_RETRY = "showAndRetry"
 private const val MASTERY_THRESHOLD = 3

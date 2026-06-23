@@ -317,6 +317,9 @@ class OpeningParserTest {
         assertEquals(opening, selection?.opening)
         assertEquals(line, selection?.line)
         assertEquals(snapshot, selection?.restoredSnapshot)
+        assertEquals("drill", snapshot.phase)
+        assertEquals(null, snapshot.playoutFen)
+        assertEquals(10, snapshot.engineLevel)
         assertEquals(null, drillSelectionForSnapshot(emptyList(), snapshot))
     }
 

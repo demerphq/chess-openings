@@ -29,9 +29,6 @@ expected to differ by platform.
   - Delete custom openings.
   - Add a custom SAN line to a custom opening.
   - Validate custom SAN input and show parse/illegal-move errors.
-- Promotion UI:
-  - Show a promotion picker when a user move reaches the final rank.
-  - Submit the selected promotion piece instead of only `from` + `to`.
 - Playout best-move hints:
   - Ask Stockfish for the best move while in engine playout.
   - Show a playout hint source square.

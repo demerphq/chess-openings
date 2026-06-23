@@ -348,6 +348,23 @@ class OpeningParserTest {
     }
 
     @Test
+    fun detectsPromotionMovesFromBoardState() {
+        val board = listOf(
+            BoardSquare(file = 'a', rank = 7, pieceCode = "wp", highlighted = false),
+            BoardSquare(file = 'h', rank = 2, pieceCode = "bp", highlighted = false),
+            BoardSquare(file = 'b', rank = 7, pieceCode = "wn", highlighted = false),
+        )
+
+        assertEquals(true, isPromotionMove("a7", "a8", board))
+        assertEquals(true, isPromotionMove("h2", "h1", board))
+        assertEquals(false, isPromotionMove("a7", "a6", board))
+        assertEquals(false, isPromotionMove("b7", "b8", board))
+        assertEquals(false, isPromotionMove("z9", "a8", board))
+        assertEquals("queen", promotionPieceName('q'))
+        assertEquals("knight", promotionPieceName('n'))
+    }
+
+    @Test
     fun extractsHintAndSolutionCoordinatesFromBookMove() {
         val move = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
         val promotion = PlySummary(san = "a8=Q", uci = "a7a8q", annotation = null, alternativeSans = emptyList())

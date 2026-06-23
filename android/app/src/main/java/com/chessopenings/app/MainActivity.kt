@@ -207,6 +207,12 @@ data class MoveQualityAnnotation(
     val id: Long = System.currentTimeMillis(),
 )
 
+data class PendingPromotionMove(
+    val from: String,
+    val to: String,
+    val inPlayout: Boolean,
+)
+
 data class BoardArrow(
     val from: String,
     val to: String,
@@ -1329,6 +1335,7 @@ fun DrillScreen(
     var playoutPositionFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutSelectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var playoutFeedback by remember(line) { mutableStateOf<String?>(null) }
+    var pendingPromotion by remember(line) { mutableStateOf<PendingPromotionMove?>(null) }
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
     var engineResignationState by remember(line) {
@@ -1380,6 +1387,7 @@ fun DrillScreen(
         playoutPositionFen = null
         playoutSelectedSquare = null
         playoutFeedback = null
+        pendingPromotion = null
         playoutMoves = emptyList()
         moveQualityAnnotation = null
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
@@ -1430,6 +1438,122 @@ fun DrillScreen(
         }
     }
 
+    fun submitPlayoutMove(playedUci: String) {
+        pendingPromotion = null
+        when (SharedCoreBridge.submitSharedPlayoutMove(playoutHandle, playedUci)) {
+            SHARED_PLAYOUT_ACCEPTED, SHARED_PLAYOUT_GAME_OVER -> {
+                playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, displayedPositionFen)
+                drillSnapshotStore.savePlayout(
+                    opening = opening,
+                    line = line,
+                    positionFen = playoutPositionFen ?: displayedPositionFen,
+                    startingFen = playoutStartFen ?: currentPositionFen,
+                    movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
+                    madeMistake = madeMistake,
+                    engineLevel = settingsStore.engineLevel,
+                )
+                playMoveSound(settingsStore, soundPlayer)
+                playoutSelectedSquare = null
+                playoutMoves = parseSharedPlayoutMoves(
+                    SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle),
+                )
+                moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
+                engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
+                playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
+            }
+
+            SHARED_PLAYOUT_ILLEGAL_MOVE -> {
+                playWrongMoveSound(settingsStore, soundPlayer)
+                playoutSelectedSquare = null
+                playoutFeedback = "Illegal move"
+            }
+
+            else -> {
+                playoutSelectedSquare = null
+                playoutFeedback = "Move unavailable"
+            }
+        }
+    }
+
+    fun submitDrillMove(playedUci: String) {
+        pendingPromotion = null
+        when (SharedCoreBridge.submitSharedDrillMove(sharedDrillHandle, playedUci)) {
+            SHARED_DRILL_ACCEPTED, SHARED_DRILL_LINE_COMPLETE -> {
+                val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
+                currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
+                currentPositionFen = snapshot.positionFen
+                if (currentPlyCount >= line.plies.size) {
+                    playCompletionSound(settingsStore, soundPlayer)
+                    recordDrillCompletionIfNeeded(
+                        progressStore = progressStore,
+                        drillSnapshotStore = drillSnapshotStore,
+                        opening = opening,
+                        line = line,
+                        madeMistake = madeMistake,
+                        masteryThreshold = masteryThreshold,
+                        alreadyRecorded = completionRecorded,
+                        onRecorded = {
+                            completionRecorded = true
+                            onProgressChanged()
+                        },
+                    )
+                } else {
+                    playMoveSound(settingsStore, soundPlayer)
+                    drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
+                }
+                selectedSquare = null
+                feedback = null
+                hintShown = false
+                solutionShown = false
+                expectedMoveArrow = null
+                showLineIsPlaying = false
+            }
+
+            SHARED_DRILL_INCORRECT -> {
+                madeMistake = true
+                nextPly?.let {
+                    progressStore.recordMistake(opening, line, it, playedUci)
+                    onProgressChanged()
+                }
+                playWrongMoveSound(settingsStore, soundPlayer)
+                drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
+                selectedSquare = null
+                feedback = expectedMoveFeedback(nextPly, drillMode)
+                solutionShown = drillMode == DRILL_MODE_SHOW_AND_RETRY
+                hintShown = false
+                expectedMoveArrow = nextPly?.boardArrow()
+                showLineIsPlaying = false
+            }
+
+            else -> {
+                selectedSquare = null
+                feedback = "Illegal move"
+                hintShown = false
+                expectedMoveArrow = null
+                showLineIsPlaying = false
+            }
+        }
+    }
+
+    fun dismissPromotionDialog() {
+        pendingPromotion = null
+        if (inPlayout) {
+            playoutSelectedSquare = null
+        } else {
+            selectedSquare = null
+        }
+    }
+
+    fun completePromotion(promotion: Char) {
+        val pending = pendingPromotion ?: return
+        val playedUci = "${pending.from}${pending.to}$promotion"
+        if (pending.inPlayout) {
+            submitPlayoutMove(playedUci)
+        } else {
+            submitDrillMove(playedUci)
+        }
+    }
+
     LaunchedEffect(showLineIsPlaying, line) {
         if (!showLineIsPlaying) return@LaunchedEffect
         while (showLineIsPlaying && currentPlyCount < line.plies.size) {
@@ -1443,6 +1567,7 @@ fun DrillScreen(
             hintShown = false
             solutionShown = false
             expectedMoveArrow = null
+            pendingPromotion = null
             if (outcome != SHARED_DRILL_ACCEPTED && outcome != SHARED_DRILL_LINE_COMPLETE) {
                 showLineIsPlaying = false
             }
@@ -1477,6 +1602,31 @@ fun DrillScreen(
         if (moveQualityAnnotation?.id == annotation.id) {
             moveQualityAnnotation = null
         }
+    }
+
+    pendingPromotion?.let {
+        AlertDialog(
+            onDismissRequest = { dismissPromotionDialog() },
+            title = { Text("promote pawn") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf('q', 'r', 'b', 'n').forEach { promotion ->
+                        TextButton(
+                            onClick = { completePromotion(promotion) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(promotionPieceName(promotion))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { dismissPromotionDialog() }) {
+                    Text("cancel")
+                }
+            },
+        )
     }
 
     if (engineResignationState == SHARED_PLAYOUT_ENGINE_RESIGNATION_PENDING) {
@@ -1580,39 +1730,10 @@ fun DrillScreen(
                         return@BoardGrid
                     }
 
-                    val playedUci = "$selected$coordinate"
-                    when (SharedCoreBridge.submitSharedPlayoutMove(playoutHandle, playedUci)) {
-                        SHARED_PLAYOUT_ACCEPTED, SHARED_PLAYOUT_GAME_OVER -> {
-                            playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, displayedPositionFen)
-                            drillSnapshotStore.savePlayout(
-                                opening = opening,
-                                line = line,
-                                positionFen = playoutPositionFen ?: displayedPositionFen,
-                                startingFen = playoutStartFen ?: currentPositionFen,
-                                movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
-                                madeMistake = madeMistake,
-                                engineLevel = settingsStore.engineLevel,
-                            )
-                            playMoveSound(settingsStore, soundPlayer)
-                            playoutSelectedSquare = null
-                            playoutMoves = parseSharedPlayoutMoves(
-                                SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle),
-                            )
-                            moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
-                            engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
-                            playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
-                        }
-
-                        SHARED_PLAYOUT_ILLEGAL_MOVE -> {
-                            playWrongMoveSound(settingsStore, soundPlayer)
-                            playoutSelectedSquare = null
-                            playoutFeedback = "Illegal move"
-                        }
-
-                        else -> {
-                            playoutSelectedSquare = null
-                            playoutFeedback = "Move unavailable"
-                        }
+                    if (isPromotionMove(selected, coordinate, board)) {
+                        pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = true)
+                    } else {
+                        submitPlayoutMove("$selected$coordinate")
                     }
                     return@BoardGrid
                 }
@@ -1626,62 +1747,10 @@ fun DrillScreen(
                         feedback = selectExpectedPieceFeedback(nextPly)
                     }
                 } else {
-                    val playedUci = "$selected$coordinate"
-                    when (SharedCoreBridge.submitSharedDrillMove(sharedDrillHandle, playedUci)) {
-                        SHARED_DRILL_ACCEPTED, SHARED_DRILL_LINE_COMPLETE -> {
-                            val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
-                            currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
-                            currentPositionFen = snapshot.positionFen
-                            if (currentPlyCount >= line.plies.size) {
-                                playCompletionSound(settingsStore, soundPlayer)
-                                recordDrillCompletionIfNeeded(
-                                    progressStore = progressStore,
-                                    drillSnapshotStore = drillSnapshotStore,
-                                    opening = opening,
-                                    line = line,
-                                    madeMistake = madeMistake,
-                                    masteryThreshold = masteryThreshold,
-                                    alreadyRecorded = completionRecorded,
-                                    onRecorded = {
-                                        completionRecorded = true
-                                        onProgressChanged()
-                                    },
-                                )
-                            } else {
-                                playMoveSound(settingsStore, soundPlayer)
-                                drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
-                            }
-                            selectedSquare = null
-                            feedback = null
-                            hintShown = false
-                            solutionShown = false
-                            expectedMoveArrow = null
-                            showLineIsPlaying = false
-                        }
-
-                        SHARED_DRILL_INCORRECT -> {
-                            madeMistake = true
-                            nextPly?.let {
-                                progressStore.recordMistake(opening, line, it, playedUci)
-                                onProgressChanged()
-                            }
-                            playWrongMoveSound(settingsStore, soundPlayer)
-                            drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
-                            selectedSquare = null
-                            feedback = expectedMoveFeedback(nextPly, drillMode)
-                            solutionShown = drillMode == DRILL_MODE_SHOW_AND_RETRY
-                            hintShown = false
-                            expectedMoveArrow = nextPly?.boardArrow()
-                            showLineIsPlaying = false
-                        }
-
-                        else -> {
-                            selectedSquare = null
-                            feedback = "Illegal move"
-                            hintShown = false
-                            expectedMoveArrow = null
-                            showLineIsPlaying = false
-                        }
+                    if (isPromotionMove(selected, coordinate, board)) {
+                        pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = false)
+                    } else {
+                        submitDrillMove("$selected$coordinate")
                     }
                 }
             },
@@ -1735,6 +1804,7 @@ fun DrillScreen(
                             engineLevel = settingsStore.engineLevel,
                         )
                         playoutSelectedSquare = null
+                        pendingPromotion = null
                         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
                         moveQualityAnnotation = null
                         engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
@@ -1753,6 +1823,7 @@ fun DrillScreen(
                         playoutPositionFen = null
                         playoutSelectedSquare = null
                         playoutFeedback = null
+                        pendingPromotion = null
                         playoutMoves = emptyList()
                         moveQualityAnnotation = null
                         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
@@ -1852,6 +1923,7 @@ fun DrillScreen(
                         hintShown = false
                         solutionShown = false
                         expectedMoveArrow = null
+                        pendingPromotion = null
                         showLineIsPlaying = false
                     },
                     enabled = currentPlyCount > initialPlyCount,
@@ -1873,6 +1945,7 @@ fun DrillScreen(
                         hintShown = false
                         solutionShown = false
                         expectedMoveArrow = null
+                        pendingPromotion = null
                         showLineIsPlaying = false
                     },
                     enabled = currentPlyCount > initialPlyCount,
@@ -1891,6 +1964,7 @@ fun DrillScreen(
                         hintShown = false
                         solutionShown = false
                         expectedMoveArrow = null
+                        pendingPromotion = null
                     }
                 },
                 enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
@@ -1923,6 +1997,7 @@ fun DrillScreen(
                             engineLevel = settingsStore.engineLevel,
                         )
                         playoutSelectedSquare = null
+                        pendingPromotion = null
                         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
                         moveQualityAnnotation = null
                         engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
@@ -2943,6 +3018,30 @@ fun canStartPlayoutMove(
     val pieceCode = board.firstOrNull { it.coordinate == coordinate }?.pieceCode ?: return false
     return pieceCode.isNotBlank() && pieceCode.first() == pieceColorCode(openingSide)
 }
+
+fun isPromotionMove(
+    from: String,
+    to: String,
+    board: List<BoardSquare>,
+): Boolean {
+    if (!from.isBoardCoordinate() || !to.isBoardCoordinate()) return false
+    val pieceCode = board.firstOrNull { it.coordinate == from }?.pieceCode ?: return false
+    if (pieceCode.length < 2 || pieceCode[1] != 'p') return false
+    return when (pieceCode[0]) {
+        'w' -> to[1] == '8'
+        'b' -> to[1] == '1'
+        else -> false
+    }
+}
+
+fun promotionPieceName(promotion: Char): String =
+    when (promotion.lowercaseChar()) {
+        'q' -> "queen"
+        'r' -> "rook"
+        'b' -> "bishop"
+        'n' -> "knight"
+        else -> "queen"
+    }
 
 fun sharedPlayoutPositionFen(
     handle: Long,

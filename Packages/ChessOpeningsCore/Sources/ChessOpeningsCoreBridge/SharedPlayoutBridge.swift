@@ -5,14 +5,18 @@ import Foundation
 public func chessOpeningsCoreSharedPlayoutCreate(
     _ startingFEN: UnsafePointer<CChar>?,
     _ userSide: Int32,
-    _ engineSkill: Int32
+    _ engineSkill: Int32,
+    _ moveAnalysisDepth: Int32
 ) -> Int64 {
     guard let startingFEN,
           let side = SharedPlayoutBridgeUserSide(rawValue: userSide)?.openingSide,
           let session = try? SharedEnginePlayoutSession(
             startingFEN: String(cString: startingFEN),
             userSide: side,
-            level: SharedEngineLevel(rawSkill: Int(engineSkill)),
+            level: SharedEngineLevel(
+                rawSkill: Int(engineSkill),
+                moveAnalysisDepth: Int(moveAnalysisDepth)
+            ),
             engine: SharedPlayoutEngineFactory.shared.makeEngine()
           ) else {
         return 0

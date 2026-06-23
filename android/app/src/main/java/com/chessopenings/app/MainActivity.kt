@@ -1338,6 +1338,7 @@ fun DrillScreen(
                 restoredStartFen,
                 opening.side.toSharedDrillUserSide(),
                 restoredSnapshot.engineLevel,
+                settingsStore.moveAnalysisDepth,
             )
             if (playout != 0L) {
                 val movesJson = restoredSnapshot.playoutMovesJson
@@ -1771,6 +1772,7 @@ fun DrillScreen(
                         currentPositionFen,
                         opening.side.toSharedDrillUserSide(),
                         settingsStore.engineLevel,
+                        settingsStore.moveAnalysisDepth,
                     )
                     if (handle == 0L) {
                         feedback = "Playout unavailable"
@@ -2561,9 +2563,22 @@ fun SharedPlayoutMoveSummary.toPlySummary(): PlySummary =
     PlySummary(
         san = san,
         uci = uci,
-        annotation = null,
+        annotation = quality?.let(::moveQualityMark),
         alternativeSans = emptyList(),
     )
+
+fun moveQualityMark(quality: String): String =
+    when (quality) {
+        "brilliant" -> "!!"
+        "best" -> "*"
+        "excellent" -> "!"
+        "good" -> "+"
+        "inaccuracy" -> "?!"
+        "mistake" -> "?"
+        "blunder" -> "??"
+        "miss" -> "x"
+        else -> ""
+    }
 
 fun pieceColorCode(openingSide: String): Char =
     if (openingSide.isBlackSide()) 'b' else 'w'
@@ -2648,15 +2663,18 @@ fun formatSanLine(plies: List<PlySummary>, maxPlies: Int): String {
         buildString {
             append(index + 1)
             append(". ")
-            append(pair[0].san)
+            append(pair[0].displaySan())
             if (pair.size > 1) {
                 append(' ')
-                append(pair[1].san)
+                append(pair[1].displaySan())
             }
         }
     }.joinToString(" ")
     return if (plies.size > maxPlies) "$moves ..." else moves
 }
+
+fun PlySummary.displaySan(): String =
+    if (annotation.isNullOrBlank()) san else "$san $annotation"
 
 fun linePreviewSans(line: LineSummary, maxPlies: Int): String {
     val visible = line.sans.take(maxPlies)

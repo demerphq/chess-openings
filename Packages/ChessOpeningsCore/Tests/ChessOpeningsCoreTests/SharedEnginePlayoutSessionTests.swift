@@ -30,6 +30,29 @@ import Testing
     #expect(engine.lastSkill == 10)
 }
 
+@Test func sharedPlayoutGradesUserMoveWhenEngineSupportsAnalysis() async throws {
+    let engine = FakeSharedEngineService(
+        bestMoves: ["e2e4", "e7e5"],
+        evaluations: [.cp(50), .cp(-45), .cp(12)],
+        supportsAnalysis: true
+    )
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+
+    let outcome = await session.submit(uci: "e2e4")
+
+    guard case .accepted(let userMove, let reply) = outcome else {
+        Issue.record("expected accepted outcome, got \(outcome)")
+        return
+    }
+    #expect(userMove.quality == .excellent)
+    #expect(session.moves.first?.quality == .excellent)
+    #expect(reply?.quality == nil)
+}
+
 @Test func sharedPlayoutBootstrapsEngineFirstPosition() async throws {
     let engine = FakeSharedEngineService(bestMoves: ["e2e4"])
     let session = try SharedEnginePlayoutSession(
@@ -221,16 +244,19 @@ import Testing
 private final class FakeSharedEngineService: SharedEngineServicing {
     var bestMoves: [String]
     var evaluations: [SharedEngineEvaluation]
+    let supportsAnalysis: Bool
     private(set) var bestMoveCalls = 0
     private(set) var evaluateCalls = 0
     private(set) var lastSkill: Int?
 
     init(
         bestMoves: [String] = [],
-        evaluations: [SharedEngineEvaluation] = []
+        evaluations: [SharedEngineEvaluation] = [],
+        supportsAnalysis: Bool = false
     ) {
         self.bestMoves = bestMoves
         self.evaluations = evaluations
+        self.supportsAnalysis = supportsAnalysis
     }
 
     func bestMove(

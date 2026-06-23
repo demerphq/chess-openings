@@ -23,7 +23,7 @@ extern int32_t chess_openings_core_shared_drill_reset(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_restore(int64_t handle, int32_t ply_index, int32_t user_side);
 extern int32_t chess_openings_core_shared_drill_undo(int64_t handle);
 extern void chess_openings_core_shared_drill_release(int64_t handle);
-extern int64_t chess_openings_core_shared_playout_create(const char *starting_fen, int32_t user_side, int32_t engine_skill);
+extern int64_t chess_openings_core_shared_playout_create(const char *starting_fen, int32_t user_side, int32_t engine_skill, int32_t move_analysis_depth);
 extern int32_t chess_openings_core_shared_playout_bootstrap(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_submit(int64_t handle, const char *uci);
 extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
@@ -243,7 +243,8 @@ Java_com_chessopenings_app_SharedCoreBridge_createSharedPlayoutSession(
     jobject receiver,
     jstring starting_fen,
     jint user_side,
-    jint engine_skill
+    jint engine_skill,
+    jint move_analysis_depth
 ) {
 #if defined(__ANDROID__)
     (void)receiver;
@@ -258,7 +259,8 @@ Java_com_chessopenings_app_SharedCoreBridge_createSharedPlayoutSession(
     int64_t handle = chess_openings_core_shared_playout_create(
         chars,
         (int32_t)user_side,
-        (int32_t)engine_skill
+        (int32_t)engine_skill,
+        (int32_t)move_analysis_depth
     );
     (*env)->ReleaseStringUTFChars(env, starting_fen, chars);
     return (jlong)handle;
@@ -268,6 +270,7 @@ Java_com_chessopenings_app_SharedCoreBridge_createSharedPlayoutSession(
     (void)starting_fen;
     (void)user_side;
     (void)engine_skill;
+    (void)move_analysis_depth;
     return 0;
 #endif
 }

@@ -8,15 +8,21 @@ public enum SharedSearchBudget: Equatable, Sendable {
 
 public struct SharedEngineLevel: Equatable, Sendable {
     public let stockfishSkill: Int
+    public let moveAnalysisDepth: Int
 
-    public init(rawSkill: Int) {
+    public init(rawSkill: Int, moveAnalysisDepth: Int = 10) {
         stockfishSkill = max(0, min(20, rawSkill))
+        self.moveAnalysisDepth = max(6, min(20, moveAnalysisDepth))
     }
 
     public static let `default` = SharedEngineLevel(rawSkill: 10)
 
     public var opponentSearchBudget: SharedSearchBudget {
         .depth(4 + (stockfishSkill * 11) / 20)
+    }
+
+    public var moveAnalysisBudget: SharedSearchBudget {
+        .depth(moveAnalysisDepth)
     }
 }
 
@@ -44,6 +50,8 @@ public struct SharedEngineDecision: Equatable, Sendable {
 }
 
 public protocol SharedEngineServicing: AnyObject {
+    var supportsAnalysis: Bool { get }
+
     func bestMove(
         at position: Position,
         skill: Int,
@@ -54,6 +62,10 @@ public protocol SharedEngineServicing: AnyObject {
         at position: Position,
         budget: SharedSearchBudget
     ) async -> SharedEngineEvaluation
+}
+
+public extension SharedEngineServicing {
+    var supportsAnalysis: Bool { false }
 }
 
 public final class SharedLegalMoveEngine: SharedEngineServicing {
@@ -114,6 +126,7 @@ public struct SharedPlayoutMove: Codable, Equatable, Sendable {
     public let san: String
     public let byUser: Bool
     public let fenAfterMove: String
+    public let quality: SharedMoveQuality?
 }
 
 public struct SharedPlayoutStoredMove: Codable, Equatable, Sendable {
@@ -199,7 +212,20 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
             return .illegalMove
         }
 
-        let userRecord = recordApply(move, byUser: true)
+        let preMovePosition = board.position
+        let analysisDecision = await analysisDecisionIfAvailable(
+            at: preMovePosition
+        )
+        var userRecord = recordApply(move, byUser: true)
+        if let quality = await moveQualityIfAvailable(
+            userMove: move,
+            pre: preMovePosition,
+            post: board.position,
+            decision: analysisDecision
+        ) {
+            userRecord = userRecord.withQuality(quality)
+            updateLatestMoveQuality(quality)
+        }
         if let reason = Self.reason(forBoardState: board.state) {
             status = .gameOver(reason)
             return .gameOver(reason)
@@ -283,7 +309,11 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         return reply
     }
 
-    private func recordApply(_ move: Move, byUser: Bool) -> SharedPlayoutMove {
+    private func recordApply(
+        _ move: Move,
+        byUser: Bool,
+        quality: SharedMoveQuality? = nil
+    ) -> SharedPlayoutMove {
         let san = SANParser.convert(move: move)
         var committed = board.move(pieceAt: move.start, to: move.end) ?? move
         if case .promotion = board.state,
@@ -295,10 +325,63 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
             uci: EngineLANParser.convert(move: committed),
             san: san,
             byUser: byUser,
-            fenAfterMove: board.position.fen
+            fenAfterMove: board.position.fen,
+            quality: quality
         )
         moves.append(record)
         return record
+    }
+
+    private func updateLatestMoveQuality(_ quality: SharedMoveQuality) {
+        guard let last = moves.last else { return }
+        moves[moves.count - 1] = SharedPlayoutMove(
+            uci: last.uci,
+            san: last.san,
+            byUser: last.byUser,
+            fenAfterMove: last.fenAfterMove,
+            quality: quality
+        )
+    }
+
+    private func analysisDecisionIfAvailable(
+        at position: Position
+    ) async -> SharedEngineDecision? {
+        guard engine.supportsAnalysis else { return nil }
+        return await engine.bestMove(
+            at: position,
+            skill: 20,
+            budget: level.moveAnalysisBudget
+        )
+    }
+
+    private func moveQualityIfAvailable(
+        userMove: Move,
+        pre: Position,
+        post: Position,
+        decision: SharedEngineDecision?
+    ) async -> SharedMoveQuality? {
+        guard engine.supportsAnalysis, let decision else { return nil }
+        let postEval = await engine.evaluate(
+            at: post,
+            budget: level.moveAnalysisBudget
+        )
+        let bestCp = decision.evaluation?.clampedCp ?? 0
+        let actualCp = -postEval.clampedCp
+        let isBrilliant = SharedMoveQualityHeuristics.isBrilliantCandidate(
+            userMove: userMove,
+            pre: pre,
+            post: post,
+            userSide: userSide,
+            bestUCI: decision.move.uci,
+            bestEvalCp: bestCp,
+            actualEvalCp: actualCp
+        )
+        return SharedMoveQuality.classify(
+            bestEvalCp: bestCp,
+            actualEvalCp: actualCp,
+            bestEvalIsWinning: bestCp >= 200,
+            isBrilliantCandidate: isBrilliant
+        )
     }
 
     private func rebuild(from retainedHistory: [(move: Move, byUser: Bool)]) {
@@ -356,6 +439,18 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
 
 public enum SharedEnginePlayoutError: Error, Equatable {
     case invalidFEN
+}
+
+private extension SharedPlayoutMove {
+    func withQuality(_ quality: SharedMoveQuality) -> SharedPlayoutMove {
+        SharedPlayoutMove(
+            uci: uci,
+            san: san,
+            byUser: byUser,
+            fenAfterMove: fenAfterMove,
+            quality: quality
+        )
+    }
 }
 
 private extension OpeningSide {

@@ -3,6 +3,7 @@ import Foundation
 
 public final class SharedUCIProcessEngine: SharedEngineServicing {
     private let client: SharedUCIProcessClient
+    public let supportsAnalysis = true
 
     public init(executablePath: String, nnueDirectory: String? = nil) {
         client = SharedUCIProcessClient(

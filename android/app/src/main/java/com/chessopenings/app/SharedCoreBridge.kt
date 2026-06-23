@@ -21,7 +21,12 @@ object SharedCoreBridge {
     external fun resetSharedDrillSession(handle: Long): Int
     external fun restoreSharedDrillSession(handle: Long, plyIndex: Int, userSide: Int): Int
     external fun releaseSharedDrillSession(handle: Long)
-    external fun createSharedPlayoutSession(startingFen: String, userSide: Int, engineSkill: Int): Long
+    external fun createSharedPlayoutSession(
+        startingFen: String,
+        userSide: Int,
+        engineSkill: Int,
+        moveAnalysisDepth: Int,
+    ): Long
     external fun bootstrapSharedPlayoutSession(handle: Long): Int
     external fun submitSharedPlayoutMove(handle: Long, uci: String): Int
     external fun sharedPlayoutPlyIndex(handle: Long): Int
@@ -66,6 +71,7 @@ data class SharedPlayoutMoveSummary(
     val san: String,
     val byUser: Boolean,
     val fenAfterMove: String,
+    val quality: String?,
 )
 
 fun parseSharedPlayoutMoves(jsonText: String?): List<SharedPlayoutMoveSummary> {
@@ -79,10 +85,14 @@ fun parseSharedPlayoutMoves(jsonText: String?): List<SharedPlayoutMoveSummary> {
                 san = move.optString("san"),
                 byUser = move.optBoolean("byUser"),
                 fenAfterMove = move.optString("fenAfterMove"),
+                quality = move.optNullableString("quality"),
             )
         }.filter { it.uci.isNotBlank() && it.san.isNotBlank() }
     }.getOrElse { emptyList() }
 }
+
+private fun JSONObject.optNullableString(name: String): String? =
+    if (has(name) && !isNull(name)) optString(name).takeIf { it.isNotBlank() } else null
 
 fun LineSummary.toCoreJson(): String =
     JSONObject()

@@ -236,6 +236,16 @@ class OpeningParserTest {
     }
 
     @Test
+    fun labelsCleanAndAssistedLineCompletions() {
+        val line = sampleDrillLine()
+
+        assertEquals("perfect", drillProgressLabel(3, line))
+        assertEquals("line complete", drillProgressLabel(3, line, madeMistake = true))
+        assertEquals("line complete", drillProgressLabel(3, line, completedViaShowLine = true))
+        assertEquals("Move 2 of 3 · next e5", drillProgressLabel(1, line))
+    }
+
+    @Test
     fun recordsCompletionProgressWithStickyLearnedState() {
         val first = recordCompletionProgress(LineProgressSummary(), madeMistake = false, threshold = 3)
         val second = recordCompletionProgress(first, madeMistake = false, threshold = 3)

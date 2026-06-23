@@ -1043,6 +1043,7 @@ fun DrillScreen(
     var solutionShown by remember(line) { mutableStateOf(false) }
     var showLineIsPlaying by remember(line) { mutableStateOf(false) }
     var madeMistake by remember(line) { mutableStateOf(false) }
+    var completedViaShowLine by remember(line) { mutableStateOf(false) }
     var completionRecorded by remember(line) { mutableStateOf(false) }
     val visiblePlies = line.plies.take(currentPlyCount)
     val board = remember(currentPositionFen, visiblePlies) {
@@ -1072,6 +1073,7 @@ fun DrillScreen(
         solutionShown = false
         showLineIsPlaying = false
         madeMistake = restoredSnapshot?.madeMistake == true
+        completedViaShowLine = false
         completionRecorded = false
         onDispose {
             if (handle != 0L) {
@@ -1099,6 +1101,7 @@ fun DrillScreen(
                 showLineIsPlaying = false
             }
             if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
+                completedViaShowLine = true
                 recordDrillCompletionIfNeeded(
                     progressStore = progressStore,
                     drillSnapshotStore = drillSnapshotStore,
@@ -1226,7 +1229,12 @@ fun DrillScreen(
         )
 
         Text(
-            text = feedback ?: drillProgressLabel(currentPlyCount, line),
+            text = feedback ?: drillProgressLabel(
+                currentPlyCount = currentPlyCount,
+                line = line,
+                madeMistake = madeMistake,
+                completedViaShowLine = completedViaShowLine,
+            ),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = if (feedback == null) {
@@ -1275,6 +1283,7 @@ fun DrillScreen(
                     currentPlyCount = snapshot.plyIndex.coerceAtLeast(initialPlyCount)
                     currentPositionFen = snapshot.positionFen
                     madeMistake = false
+                    completedViaShowLine = false
                     completionRecorded = false
                     drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                     selectedSquare = null
@@ -1294,6 +1303,7 @@ fun DrillScreen(
                     currentPlyCount = snapshot.plyIndex
                     currentPositionFen = snapshot.positionFen
                     madeMistake = false
+                    completedViaShowLine = false
                     completionRecorded = false
                     drillSnapshotStore.clear()
                     selectedSquare = null
@@ -1876,10 +1886,15 @@ fun previewPieceAt(file: Char, rank: Int, uci: String): String {
     }
 }
 
-fun drillProgressLabel(currentPlyCount: Int, line: LineSummary): String {
+fun drillProgressLabel(
+    currentPlyCount: Int,
+    line: LineSummary,
+    madeMistake: Boolean = false,
+    completedViaShowLine: Boolean = false,
+): String {
     if (line.plies.isEmpty()) return "No moves"
     return if (currentPlyCount >= line.plies.size) {
-        "Line complete"
+        if (!madeMistake && !completedViaShowLine) "perfect" else "line complete"
     } else {
         val next = line.plies[currentPlyCount]
         "Move ${currentPlyCount + 1} of ${line.plies.size} · next ${next.san}"

@@ -52,6 +52,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -823,12 +824,18 @@ fun ChessOpeningsApp() {
             context.getSharedPreferences("settings", Context.MODE_PRIVATE),
         )
     }
+    val customOpeningStore = remember {
+        AndroidCustomOpeningStore(
+            context.getSharedPreferences("custom-openings", Context.MODE_PRIVATE),
+        )
+    }
     val soundPlayer = remember { AndroidSoundPlayer() }
     DisposableEffect(soundPlayer) {
         onDispose { soundPlayer.close() }
     }
     var progressRevision by remember { mutableIntStateOf(0) }
     var settingsRevision by remember { mutableIntStateOf(0) }
+    var customOpeningRevision by remember { mutableIntStateOf(0) }
     remember {
         check(SharedCoreBridge.isChessKitAvailable()) {
             "Shared ChessOpeningsCore bridge is unavailable"
@@ -837,10 +844,13 @@ fun ChessOpeningsApp() {
             "Shared DrillSession bridge is unavailable"
         }
     }
-    val openings = remember {
+    val seedOpenings = remember {
         context.assets.open("openings.json")
             .bufferedReader()
             .use { parseOpeningSummaries(it.readText()) }
+    }
+    val openings = remember(seedOpenings, customOpeningRevision) {
+        seedOpenings + customOpeningStore.openings()
     }
     remember(openings) {
         openings.firstOrNull()?.lines?.firstOrNull()?.let { line ->
@@ -869,11 +879,13 @@ fun ChessOpeningsApp() {
                 progressStore = progressStore,
                 drillSnapshotStore = drillSnapshotStore,
                 settingsStore = settingsStore,
+                customOpeningStore = customOpeningStore,
                 soundPlayer = soundPlayer,
                 progressRevision = progressRevision,
                 settingsRevision = settingsRevision,
                 onProgressChanged = { progressRevision += 1 },
                 onSettingsChanged = { settingsRevision += 1 },
+                onCustomOpeningsChanged = { customOpeningRevision += 1 },
             )
         }
     }
@@ -885,16 +897,30 @@ fun ChessOpeningsHome(
     progressStore: AndroidProgressStore,
     drillSnapshotStore: AndroidDrillSnapshotStore,
     settingsStore: AndroidSettingsStore,
+    customOpeningStore: AndroidCustomOpeningStore,
     soundPlayer: AndroidSoundPlayer,
     progressRevision: Int,
     settingsRevision: Int,
     onProgressChanged: () -> Unit,
     onSettingsChanged: () -> Unit,
+    onCustomOpeningsChanged: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
     var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
     var detailOpening by remember { mutableStateOf<OpeningSummary?>(null) }
     var didAutoResume by remember { mutableStateOf(false) }
+    var showNewOpening by remember { mutableStateOf(false) }
+
+    if (showNewOpening) {
+        NewOpeningDialog(
+            onDismiss = { showNewOpening = false },
+            onCreate = { name, eco, side ->
+                customOpeningStore.create(name, eco, side)
+                onCustomOpeningsChanged()
+                showNewOpening = false
+            },
+        )
+    }
 
     LaunchedEffect(openings) {
         if (didAutoResume) return@LaunchedEffect
@@ -960,6 +986,7 @@ fun ChessOpeningsHome(
                     progressStore = progressStore,
                     progressRevision = progressRevision,
                     onOpeningSelected = { detailOpening = it },
+                    onCreateOpening = { showNewOpening = true },
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -972,6 +999,11 @@ fun ChessOpeningsHome(
                     onBack = { detailOpening = null },
                     onStartDrill = { line ->
                         drillSelection = DrillSelection(opening, line)
+                    },
+                    onDeleteOpening = {
+                        customOpeningStore.delete(opening.id)
+                        onCustomOpeningsChanged()
+                        detailOpening = null
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1002,12 +1034,79 @@ fun ChessOpeningsHome(
 }
 
 @Composable
+fun NewOpeningDialog(
+    onDismiss: () -> Unit,
+    onCreate: (name: String, eco: String, side: String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var eco by remember { mutableStateOf("") }
+    var side by remember { mutableStateOf("white") }
+    val canCreate = name.trim().isNotEmpty()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("new opening") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("opening name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = eco,
+                    onValueChange = { eco = it },
+                    label = { Text("ECO (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        onClick = { side = "white" },
+                        enabled = side != "white",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("white")
+                    }
+                    TextButton(
+                        onClick = { side = "black" },
+                        enabled = side != "black",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("black")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(name.trim(), eco.trim(), side) },
+                enabled = canCreate,
+            ) {
+                Text("create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("cancel")
+            }
+        },
+    )
+}
+
+@Composable
 fun OpeningCatalogue(
     openings: List<OpeningSummary>,
     tab: AppTab,
     progressStore: AndroidProgressStore,
     progressRevision: Int,
     onOpeningSelected: (OpeningSummary) -> Unit,
+    onCreateOpening: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val indexedOpenings = openings.mapIndexed { index, opening -> index to opening }
@@ -1017,7 +1116,23 @@ fun OpeningCatalogue(
             .fillMaxSize()
             .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
-        CatalogueHeader(tab = tab, openingCount = openings.size)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CatalogueHeader(
+                tab = tab,
+                openingCount = openings.size,
+            )
+            if (tab == AppTab.Library) {
+                Button(
+                    onClick = onCreateOpening,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("new opening")
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         LazyColumn(
@@ -1382,9 +1497,10 @@ fun SettingStepperRow(
 fun CatalogueHeader(
     tab: AppTab,
     openingCount: Int?,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -1416,9 +1532,28 @@ fun OpeningDetailScreen(
     settingsRevision: Int,
     onBack: () -> Unit,
     onStartDrill: (LineSummary) -> Unit,
+    onDeleteOpening: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
+    var showDeleteConfirmation by remember(opening.id) { mutableStateOf(false) }
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("delete opening?") },
+            text = { Text("This deletes ${opening.name.toDisplayName()} and all of its lines.") },
+            confirmButton = {
+                TextButton(onClick = onDeleteOpening) {
+                    Text("delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("cancel")
+                }
+            },
+        )
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -1434,11 +1569,18 @@ fun OpeningDetailScreen(
                 TextButton(onClick = onBack) {
                     Text("back")
                 }
-                Button(
-                    onClick = { opening.lines.firstOrNull()?.let(onStartDrill) },
-                    enabled = opening.lines.isNotEmpty(),
-                ) {
-                    Text("drill all")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!opening.isSeed) {
+                        TextButton(onClick = { showDeleteConfirmation = true }) {
+                            Text("delete")
+                        }
+                    }
+                    Button(
+                        onClick = { opening.lines.firstOrNull()?.let(onStartDrill) },
+                        enabled = opening.lines.isNotEmpty(),
+                    ) {
+                        Text("drill all")
+                    }
                 }
             }
         }

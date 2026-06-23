@@ -265,6 +265,33 @@ class OpeningParserTest {
     }
 
     @Test
+    fun recordsRollingMistakesForLineReview() {
+        val expected = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
+        val first = appendRollingMistake(emptyList(), expected, playedUci = "d2d4", atMillis = 1L)
+        val second = appendRollingMistake(first, expected, playedUci = "c2c4", atMillis = 2L)
+
+        assertEquals(1, first.size)
+        assertEquals("d2d4", first[0].playedUci)
+        assertEquals("2 mistakes · played c2c4 · book e4", mistakeSummaryText(second))
+
+        val roundTrip = decodeMistakes(encodeMistakes(second))
+        assertEquals(second, roundTrip)
+        assertEquals(emptyList<AndroidMistake>(), decodeMistakes("not json"))
+    }
+
+    @Test
+    fun capsMistakeLogAtTwentyRecentEntries() {
+        val expected = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
+        val mistakes = (1..25).fold(emptyList<AndroidMistake>()) { current, index ->
+            appendRollingMistake(current, expected, playedUci = "a${index}a${index + 1}", atMillis = index.toLong())
+        }
+
+        assertEquals(20, mistakes.size)
+        assertEquals("a6a7", mistakes.first().playedUci)
+        assertEquals("a25a26", mistakes.last().playedUci)
+    }
+
+    @Test
     fun buildsStableProgressKeysFromOpeningAndLineIdentity() {
         val line = sampleDrillLine()
         val opening = sampleOpening(side = "white", line = line)

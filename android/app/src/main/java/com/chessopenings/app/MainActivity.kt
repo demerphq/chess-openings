@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.security.MessageDigest
 import kotlinx.coroutines.delay
+import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -126,6 +127,13 @@ data class LineProgressSummary(
     val timesCompleted: Int = 0,
 )
 
+data class AndroidMistake(
+    val expectedSan: String,
+    val expectedUci: String,
+    val playedUci: String,
+    val atMillis: Long,
+)
+
 class AndroidSoundPlayer : AutoCloseable {
     private val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
 
@@ -163,6 +171,12 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
     fun learnedLineCount(opening: OpeningSummary): Int =
         opening.lines.count { lineProgress(opening, it).isLearned }
 
+    fun lineMistakes(
+        opening: OpeningSummary,
+        line: LineSummary,
+    ): List<AndroidMistake> =
+        decodeMistakes(preferences.getString("${progressKey(opening, line)}.mistakes", null))
+
     fun recordCompletion(
         opening: OpeningSummary,
         line: LineSummary,
@@ -177,6 +191,25 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
             .putBoolean("$prefix.isLearned", next.isLearned)
             .putInt("$prefix.timesAttempted", next.timesAttempted)
             .putInt("$prefix.timesCompleted", next.timesCompleted)
+            .apply()
+    }
+
+    fun recordMistake(
+        opening: OpeningSummary,
+        line: LineSummary,
+        expectedPly: PlySummary,
+        playedUci: String,
+        atMillis: Long = System.currentTimeMillis(),
+    ) {
+        val prefix = progressKey(opening, line)
+        val next = appendRollingMistake(
+            current = decodeMistakes(preferences.getString("$prefix.mistakes", null)),
+            expectedPly = expectedPly,
+            playedUci = playedUci,
+            atMillis = atMillis,
+        )
+        preferences.edit()
+            .putString("$prefix.mistakes", encodeMistakes(next))
             .apply()
     }
 
@@ -289,6 +322,52 @@ fun recordCompletionProgress(
         timesAttempted = current.timesAttempted + 1,
         timesCompleted = current.timesCompleted + 1,
     )
+}
+
+fun appendRollingMistake(
+    current: List<AndroidMistake>,
+    expectedPly: PlySummary,
+    playedUci: String,
+    atMillis: Long,
+    limit: Int = MISTAKE_LOG_LIMIT,
+): List<AndroidMistake> =
+    (current + AndroidMistake(expectedPly.san, expectedPly.uci, playedUci, atMillis))
+        .takeLast(limit.coerceAtLeast(1))
+
+fun encodeMistakes(mistakes: List<AndroidMistake>): String {
+    val array = JSONArray()
+    mistakes.forEach { mistake ->
+        array.put(
+            JSONObject()
+                .put("expectedSan", mistake.expectedSan)
+                .put("expectedUci", mistake.expectedUci)
+                .put("playedUci", mistake.playedUci)
+                .put("atMillis", mistake.atMillis),
+        )
+    }
+    return array.toString()
+}
+
+fun decodeMistakes(json: String?): List<AndroidMistake> {
+    if (json.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val array = JSONArray(json)
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            AndroidMistake(
+                expectedSan = item.optString("expectedSan"),
+                expectedUci = item.optString("expectedUci"),
+                playedUci = item.optString("playedUci"),
+                atMillis = item.optLong("atMillis", 0L),
+            )
+        }.filter { it.expectedSan.isNotBlank() && it.expectedUci.isNotBlank() && it.playedUci.isNotBlank() }
+    }.getOrElse { emptyList() }
+}
+
+fun mistakeSummaryText(mistakes: List<AndroidMistake>): String? {
+    val latest = mistakes.lastOrNull() ?: return null
+    val countPrefix = if (mistakes.size == 1) "1 mistake" else "${mistakes.size} mistakes"
+    return "$countPrefix · played ${latest.playedUci} · book ${latest.expectedSan}"
 }
 
 fun progressKey(
@@ -1263,6 +1342,10 @@ fun DrillScreen(
 
                         SHARED_DRILL_INCORRECT -> {
                             madeMistake = true
+                            nextPly?.let {
+                                progressStore.recordMistake(opening, line, it, playedUci)
+                                onProgressChanged()
+                            }
                             playWrongMoveSound(settingsStore, soundPlayer)
                             drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
                             selectedSquare = null
@@ -1589,11 +1672,13 @@ fun OpeningRow(
 fun LineRow(
     line: LineSummary,
     progress: LineProgressSummary,
+    mistakes: List<AndroidMistake>,
     masteryThreshold: Int,
     onClick: () -> Unit,
 ) {
     val streak = progress.correctStreak
     val threshold = masteryThreshold
+    val mistakeSummary = mistakeSummaryText(mistakes)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1620,6 +1705,15 @@ fun LineRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            mistakeSummary?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (progress.isLearned) {
                 Text(
                     text = "learned · streak $streak",
@@ -1690,9 +1784,13 @@ private fun LazyListScope.detailLineSection(
         val progress = remember(progressRevision, opening, line) {
             progressStore.lineProgress(opening, line)
         }
+        val mistakes = remember(progressRevision, opening, line) {
+            progressStore.lineMistakes(opening, line)
+        }
         LineRow(
             line = line,
             progress = progress,
+            mistakes = mistakes,
             masteryThreshold = masteryThreshold,
             onClick = { onStartDrill(line) },
         )
@@ -2264,6 +2362,7 @@ private const val SHARED_DRILL_USER_SIDE_BLACK = 1
 private const val DRILL_MODE_STRICT = "strict"
 private const val DRILL_MODE_SHOW_AND_RETRY = "showAndRetry"
 private const val MASTERY_THRESHOLD = 3
+private const val MISTAKE_LOG_LIMIT = 20
 private const val DEFAULT_ENGINE_LEVEL = 10
 private const val DEFAULT_MOVE_ANALYSIS_DEPTH = 10
 private const val DEFAULT_MOVE_QUALITY_BADGE_MS = 1750

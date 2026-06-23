@@ -174,6 +174,47 @@ import Testing
     #expect(engine.evaluateCalls == 1)
 }
 
+@Test func sharedPlayoutOffersEngineResignationAfterLosingReplies() async throws {
+    let engine = FakeSharedEngineService(
+        bestMoves: ["e7e5", "b8c6"],
+        evaluations: [.cp(-400), .cp(-350)]
+    )
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+    session.resignationWindowSize = 2
+
+    _ = await session.submit(uci: "e2e4")
+    #expect(session.status == .waitingForUser)
+
+    _ = await session.submit(uci: "g1f3")
+    #expect(session.status == .gameOver(.engineResigned(accepted: nil)))
+
+    session.acceptEngineResignation()
+    #expect(session.status == .gameOver(.engineResigned(accepted: true)))
+}
+
+@Test func sharedPlayoutDeclinesEngineResignationAndContinues() async throws {
+    let engine = FakeSharedEngineService(
+        bestMoves: ["e7e5"],
+        evaluations: [.cp(-400)]
+    )
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+    session.resignationWindowSize = 1
+
+    _ = await session.submit(uci: "e2e4")
+    #expect(session.status == .gameOver(.engineResigned(accepted: nil)))
+
+    session.declineEngineResignation()
+    #expect(session.status == .waitingForUser)
+}
+
 @Test func sharedPlayoutRejectsInvalidFen() async throws {
     #expect(throws: SharedEnginePlayoutError.invalidFEN) {
         _ = try SharedEnginePlayoutSession(

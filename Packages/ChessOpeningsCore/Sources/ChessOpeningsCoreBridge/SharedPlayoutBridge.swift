@@ -155,6 +155,35 @@ public func chessOpeningsCoreSharedPlayoutResign(_ handle: Int64) -> Int32 {
     return SharedPlayoutBridgeStatus(session.status).rawValue
 }
 
+@_cdecl("chess_openings_core_shared_playout_engine_resignation")
+public func chessOpeningsCoreSharedPlayoutEngineResignation(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return -1
+    }
+    guard case .gameOver(.engineResigned(let accepted)) = session.status else {
+        return 0
+    }
+    return accepted == true ? 2 : 1
+}
+
+@_cdecl("chess_openings_core_shared_playout_accept_engine_resignation")
+public func chessOpeningsCoreSharedPlayoutAcceptEngineResignation(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeStatus.invalidHandle.rawValue
+    }
+    session.acceptEngineResignation()
+    return SharedPlayoutBridgeStatus(session.status).rawValue
+}
+
+@_cdecl("chess_openings_core_shared_playout_decline_engine_resignation")
+public func chessOpeningsCoreSharedPlayoutDeclineEngineResignation(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeStatus.invalidHandle.rawValue
+    }
+    session.declineEngineResignation()
+    return SharedPlayoutBridgeStatus(session.status).rawValue
+}
+
 @_cdecl("chess_openings_core_shared_playout_undo")
 public func chessOpeningsCoreSharedPlayoutUndo(_ handle: Int64) -> Int32 {
     guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {

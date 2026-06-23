@@ -36,6 +36,9 @@ object SharedCoreBridge {
     external fun restoreSharedPlayoutMoves(handle: Long, movesJson: String): Int
     external fun offerSharedPlayoutDraw(handle: Long): Int
     external fun resignSharedPlayout(handle: Long): Int
+    external fun sharedPlayoutEngineResignation(handle: Long): Int
+    external fun acceptSharedPlayoutEngineResignation(handle: Long): Int
+    external fun declineSharedPlayoutEngineResignation(handle: Long): Int
     external fun undoSharedPlayoutSession(handle: Long): Int
     external fun releaseSharedPlayoutSession(handle: Long)
 

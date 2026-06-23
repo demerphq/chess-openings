@@ -153,11 +153,14 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     public private(set) var status: SharedPlayoutStatus
     public private(set) var moves: [SharedPlayoutMove]
     public private(set) var lastEngineEval: SharedEngineEvaluation?
+    var resignationThresholdCp: Int = 300
+    var resignationWindowSize: Int = 6
 
     private let engine: SharedEngineServicing
     private let initialFEN: String
     private var board: Board
     private var history: [(move: Move, byUser: Bool)]
+    private var resignationWindow: [SharedEngineEvaluation]
 
     public init(
         startingFEN: String,
@@ -176,6 +179,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         self.moves = []
         self.lastEngineEval = nil
         self.history = []
+        self.resignationWindow = []
         self.status = Self.userIsOnMove(userSide: userSide, position: position)
             ? .waitingForUser
             : .engineThinking
@@ -254,6 +258,21 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         status = .gameOver(.userResigned)
     }
 
+    public func declineEngineResignation() {
+        guard case .gameOver(.engineResigned(accepted: nil)) = status else {
+            return
+        }
+        resignationWindow.removeAll()
+        status = .waitingForUser
+    }
+
+    public func acceptEngineResignation() {
+        guard case .gameOver(.engineResigned(accepted: nil)) = status else {
+            return
+        }
+        status = .gameOver(.engineResigned(accepted: true))
+    }
+
     public func undo() {
         if case .gameOver = status { return }
         guard let lastUserMove = history.lastIndex(where: { $0.byUser }) else {
@@ -303,10 +322,31 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         lastEngineEval = decision.evaluation
         if let reason = Self.reason(forBoardState: board.state) {
             status = .gameOver(reason)
+        } else if let eval = decision.evaluation,
+                  isEngineLosing(eval, thresholdCp: resignationThresholdCp) {
+            resignationWindow.append(eval)
+            if resignationWindow.count >= resignationWindowSize {
+                status = .gameOver(.engineResigned(accepted: nil))
+            } else {
+                status = .waitingForUser
+            }
         } else {
+            resignationWindow.removeAll()
             status = .waitingForUser
         }
         return reply
+    }
+
+    private func isEngineLosing(
+        _ eval: SharedEngineEvaluation,
+        thresholdCp: Int
+    ) -> Bool {
+        switch eval {
+        case .cp(let value):
+            return value <= -thresholdCp
+        case .mate(let moves):
+            return moves < 0
+        }
     }
 
     private func recordApply(
@@ -397,6 +437,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         history = []
         moves = []
         lastEngineEval = nil
+        resignationWindow = []
         status = Self.userIsOnMove(userSide: userSide, position: start)
             ? .waitingForUser
             : .engineThinking

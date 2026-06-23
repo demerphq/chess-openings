@@ -82,6 +82,15 @@ class OpeningParserTest {
     }
 
     @Test
+    fun awardsSpeedyOnlyForEligibleSubSecondCompletions() {
+        assertEquals(true, isSpeedyDrillCompletion(7_999, 8, timingEligible = true, completedViaShowLine = false))
+        assertEquals(false, isSpeedyDrillCompletion(8_000, 8, timingEligible = true, completedViaShowLine = false))
+        assertEquals(false, isSpeedyDrillCompletion(1_000, 8, timingEligible = false, completedViaShowLine = false))
+        assertEquals(false, isSpeedyDrillCompletion(1_000, 8, timingEligible = true, completedViaShowLine = true))
+        assertEquals(false, isSpeedyDrillCompletion(0, 0, timingEligible = true, completedViaShowLine = false))
+    }
+
+    @Test
     fun formatsDisplayLabels() {
         val line = LineSummary(
             name = "Bc5",

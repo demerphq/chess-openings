@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -57,6 +58,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -1348,6 +1350,10 @@ fun DrillScreen(
     var madeMistake by remember(line) { mutableStateOf(false) }
     var completedViaShowLine by remember(line) { mutableStateOf(false) }
     var completionRecorded by remember(line) { mutableStateOf(false) }
+    var userThinkingMillis by remember(line) { mutableLongStateOf(0L) }
+    var lastPromptAtMillis by remember(line) { mutableStateOf<Long?>(null) }
+    var timingEligible by remember(line) { mutableStateOf(false) }
+    var completionWasSpeedy by remember(line) { mutableStateOf(false) }
     var playoutHandle by remember(line) { mutableStateOf(0L) }
     var playoutStartFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutPositionFen by remember(line) { mutableStateOf<String?>(null) }
@@ -1401,6 +1407,14 @@ fun DrillScreen(
         madeMistake = restoredSnapshot?.madeMistake == true
         completedViaShowLine = false
         completionRecorded = restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT
+        userThinkingMillis = 0L
+        timingEligible = restoredSnapshot == null
+        completionWasSpeedy = false
+        lastPromptAtMillis = if (timingEligible && snapshot.plyIndex < line.plies.size) {
+            SystemClock.elapsedRealtime()
+        } else {
+            null
+        }
         playoutHandle = 0L
         playoutStartFen = null
         playoutPositionFen = null
@@ -1495,14 +1509,35 @@ fun DrillScreen(
         }
     }
 
+    fun stopThinkingClock() {
+        val promptAt = lastPromptAtMillis ?: return
+        userThinkingMillis += (SystemClock.elapsedRealtime() - promptAt).coerceAtLeast(0L)
+        lastPromptAtMillis = null
+    }
+
+    fun restartThinkingClock() {
+        lastPromptAtMillis = if (timingEligible && currentPlyCount < line.plies.size) {
+            SystemClock.elapsedRealtime()
+        } else {
+            null
+        }
+    }
+
     fun submitDrillMove(playedUci: String) {
         pendingPromotion = null
+        stopThinkingClock()
         when (SharedCoreBridge.submitSharedDrillMove(sharedDrillHandle, playedUci)) {
             SHARED_DRILL_ACCEPTED, SHARED_DRILL_LINE_COMPLETE -> {
                 val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
                 currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
                 currentPositionFen = snapshot.positionFen
                 if (currentPlyCount >= line.plies.size) {
+                    completionWasSpeedy = isSpeedyDrillCompletion(
+                        userThinkingMillis = userThinkingMillis,
+                        linePlyCount = line.plies.size,
+                        timingEligible = timingEligible,
+                        completedViaShowLine = completedViaShowLine,
+                    )
                     playCompletionSound(settingsStore, soundPlayer)
                     recordDrillCompletionIfNeeded(
                         progressStore = progressStore,
@@ -1520,6 +1555,7 @@ fun DrillScreen(
                 } else {
                     playMoveSound(settingsStore, soundPlayer)
                     drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
+                    restartThinkingClock()
                 }
                 selectedSquare = null
                 feedback = null
@@ -1543,6 +1579,7 @@ fun DrillScreen(
                 hintShown = false
                 expectedMoveArrow = nextPly?.boardArrow()
                 showLineIsPlaying = false
+                restartThinkingClock()
             }
 
             else -> {
@@ -1551,6 +1588,7 @@ fun DrillScreen(
                 hintShown = false
                 expectedMoveArrow = null
                 showLineIsPlaying = false
+                restartThinkingClock()
             }
         }
     }
@@ -1677,6 +1715,7 @@ fun DrillScreen(
             }
             if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
                 completedViaShowLine = true
+                completionWasSpeedy = false
                 playCompletionSound(settingsStore, soundPlayer)
                 recordDrillCompletionIfNeeded(
                     progressStore = progressStore,
@@ -1890,6 +1929,7 @@ fun DrillScreen(
         if (!inPlayout && currentPlyCount >= line.plies.size) {
             DrillCompletionBanner(
                 perfect = !madeMistake && !completedViaShowLine,
+                speedy = completionWasSpeedy,
                 onPlayOut = { startPlayout() },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -2019,6 +2059,8 @@ fun DrillScreen(
                         madeMistake = false
                         completedViaShowLine = false
                         completionRecorded = false
+                        completionWasSpeedy = false
+                        restartThinkingClock()
                         drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                         selectedSquare = null
                         feedback = null
@@ -2041,6 +2083,10 @@ fun DrillScreen(
                         madeMistake = false
                         completedViaShowLine = false
                         completionRecorded = false
+                        userThinkingMillis = 0L
+                        timingEligible = true
+                        completionWasSpeedy = false
+                        restartThinkingClock()
                         drillSnapshotStore.clear()
                         selectedSquare = null
                         feedback = null
@@ -2061,6 +2107,9 @@ fun DrillScreen(
                 onClick = {
                     showLineIsPlaying = !showLineIsPlaying
                     if (showLineIsPlaying) {
+                        timingEligible = false
+                        lastPromptAtMillis = null
+                        completionWasSpeedy = false
                         selectedSquare = null
                         feedback = null
                         hintShown = false
@@ -2083,6 +2132,7 @@ fun DrillScreen(
 @Composable
 fun DrillCompletionBanner(
     perfect: Boolean,
+    speedy: Boolean,
     onPlayOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2097,12 +2147,31 @@ fun DrillCompletionBanner(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = if (perfect) "perfect" else "line complete",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF28613A),
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (perfect) "perfect" else "line complete",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF28613A),
+                )
+                if (speedy) {
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        color = Color(0xFFFFE6A3),
+                    ) {
+                        Text(
+                            text = "speedy",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF6D5100),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
             Button(onClick = onPlayOut) {
                 Text("play it out")
             }
@@ -2992,6 +3061,17 @@ fun drillProgressLabel(
         "Move ${currentPlyCount + 1} of ${line.plies.size} · select a move"
     }
 }
+
+fun isSpeedyDrillCompletion(
+    userThinkingMillis: Long,
+    linePlyCount: Int,
+    timingEligible: Boolean,
+    completedViaShowLine: Boolean,
+): Boolean =
+    timingEligible &&
+        !completedViaShowLine &&
+        linePlyCount > 0 &&
+        userThinkingMillis.toDouble() / linePlyCount < 1_000.0
 
 fun sameMoveSquares(playedUci: String, expectedUci: String): Boolean =
     playedUci.length >= 4 &&

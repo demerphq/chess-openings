@@ -39,7 +39,6 @@ expected to differ by platform.
   - Show capture target indicators.
   - Animate pieces moving between squares.
 - Drill completion polish:
-  - Show the speedy run badge.
   - Fire confetti when a line first becomes learned.
 
 ## Missing From iPhone

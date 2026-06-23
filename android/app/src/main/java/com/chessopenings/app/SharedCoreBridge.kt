@@ -15,6 +15,7 @@ object SharedCoreBridge {
     external fun autoplaySharedDrillNext(handle: Long): Int
     external fun sharedDrillPlyIndex(handle: Long): Int
     external fun sharedDrillStatus(handle: Long): Int
+    external fun sharedDrillPositionFen(handle: Long): String?
     external fun undoSharedDrillSession(handle: Long): Int
     external fun resetSharedDrillSession(handle: Long): Int
     external fun releaseSharedDrillSession(handle: Long)

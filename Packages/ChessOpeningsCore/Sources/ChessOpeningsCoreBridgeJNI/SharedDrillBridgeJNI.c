@@ -17,6 +17,7 @@ extern int32_t chess_openings_core_shared_drill_submit(int64_t handle, const cha
 extern int32_t chess_openings_core_shared_drill_autoplay_next(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_status(int64_t handle);
+extern int32_t chess_openings_core_shared_drill_position_fen(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_drill_reset(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_undo(int64_t handle);
 extern void chess_openings_core_shared_drill_release(int64_t handle);
@@ -108,6 +109,32 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedDrillStatus(
     (void)env;
     (void)receiver;
     return (jint)chess_openings_core_shared_drill_status((int64_t)handle);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_sharedDrillPositionFen(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    char buffer[256];
+    int32_t length = chess_openings_core_shared_drill_position_fen(
+        (int64_t)handle,
+        buffer,
+        (int32_t)sizeof(buffer)
+    );
+    if (length < 0) {
+        return 0;
+    }
+    return (*env)->NewStringUTF(env, buffer);
+#else
+    (void)env;
+    (void)receiver;
+    (void)handle;
+    return 0;
+#endif
 }
 
 JNIEXPORT jint JNICALL

@@ -451,6 +451,7 @@ fun DrillScreen(
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
     var currentPlyCount by remember(line) { mutableIntStateOf(0) }
+    var currentPositionFen by remember(line) { mutableStateOf(STARTING_POSITION_FEN) }
     var sharedDrillHandle by remember(line) { mutableStateOf(0L) }
     var selectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var feedback by remember(line) { mutableStateOf<String?>(null) }
@@ -458,7 +459,12 @@ fun DrillScreen(
     var solutionShown by remember(line) { mutableStateOf(false) }
     var showLineIsPlaying by remember(line) { mutableStateOf(false) }
     val visiblePlies = line.plies.take(currentPlyCount)
-    val board = remember(line, currentPlyCount) { boardSquaresAfterPlies(visiblePlies) }
+    val board = remember(currentPositionFen, visiblePlies) {
+        boardSquaresFromFen(
+            fen = currentPositionFen,
+            highlightedMove = visiblePlies.lastOrNull()?.uci.orEmpty(),
+        )
+    }
     val nextPly = line.plies.getOrNull(currentPlyCount)
     val hintCoordinate = if (hintShown && !solutionShown) nextPly?.fromCoordinate() else null
     val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
@@ -466,7 +472,9 @@ fun DrillScreen(
     DisposableEffect(opening, line) {
         val handle = SharedCoreBridge.createSharedDrillSession(line)
         sharedDrillHandle = handle
-        currentPlyCount = resetSharedDrillForOpening(handle, opening)
+        val snapshot = resetSharedDrillForOpening(handle, opening)
+        currentPlyCount = snapshot.plyIndex
+        currentPositionFen = snapshot.positionFen
         selectedSquare = null
         feedback = null
         hintShown = false
@@ -487,7 +495,9 @@ fun DrillScreen(
         while (showLineIsPlaying && currentPlyCount < line.plies.size) {
             delay(1_000)
             val outcome = SharedCoreBridge.autoplaySharedDrillNext(sharedDrillHandle)
-            currentPlyCount = SharedCoreBridge.sharedDrillPlyIndex(sharedDrillHandle).coerceAtLeast(currentPlyCount)
+            val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
+            currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
+            currentPositionFen = snapshot.positionFen
             selectedSquare = null
             feedback = null
             hintShown = false
@@ -556,8 +566,9 @@ fun DrillScreen(
                     val playedUci = "$selected$coordinate"
                     when (SharedCoreBridge.submitSharedDrillMove(sharedDrillHandle, playedUci)) {
                         SHARED_DRILL_ACCEPTED, SHARED_DRILL_LINE_COMPLETE -> {
-                            currentPlyCount = SharedCoreBridge.sharedDrillPlyIndex(sharedDrillHandle)
-                                .coerceAtLeast(currentPlyCount)
+                            val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
+                            currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
+                            currentPositionFen = snapshot.positionFen
                             selectedSquare = null
                             feedback = null
                             hintShown = false
@@ -630,8 +641,10 @@ fun DrillScreen(
             }
             TextButton(
                 onClick = {
-                    currentPlyCount = SharedCoreBridge.undoSharedDrillSession(sharedDrillHandle)
-                        .coerceAtLeast(initialPlyCount)
+                    SharedCoreBridge.undoSharedDrillSession(sharedDrillHandle)
+                    val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = initialPlyCount)
+                    currentPlyCount = snapshot.plyIndex.coerceAtLeast(initialPlyCount)
+                    currentPositionFen = snapshot.positionFen
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -645,7 +658,9 @@ fun DrillScreen(
             }
             TextButton(
                 onClick = {
-                    currentPlyCount = resetSharedDrillForOpening(sharedDrillHandle, opening)
+                    val snapshot = resetSharedDrillForOpening(sharedDrillHandle, opening)
+                    currentPlyCount = snapshot.plyIndex
+                    currentPositionFen = snapshot.positionFen
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -1045,6 +1060,46 @@ fun boardSquaresAfterPlies(plies: List<PlySummary>): List<BoardSquare> {
     return boardSquaresFromPieces(pieces, highlightedSquares)
 }
 
+fun boardSquaresFromFen(
+    fen: String,
+    highlightedMove: String = "",
+): List<BoardSquare> {
+    val placement = fen.substringBefore(' ')
+    val pieces = mutableMapOf<String, String>()
+    var rank = 8
+    var file = 'a'
+
+    for (symbol in placement) {
+        when {
+            symbol == '/' -> {
+                rank -= 1
+                file = 'a'
+            }
+
+            symbol.isDigit() -> {
+                file += symbol.digitToInt()
+            }
+
+            symbol.isLetter() && rank in 1..8 && file in 'a'..'h' -> {
+                pieces["$file$rank"] = fenPieceCode(symbol)
+                file += 1
+            }
+
+            else -> return boardSquaresAfterPlies(emptyList())
+        }
+    }
+
+    return boardSquaresFromPieces(
+        pieces = pieces,
+        highlightedSquares = highlightedSquaresForUci(highlightedMove),
+    )
+}
+
+private fun fenPieceCode(symbol: Char): String {
+    val color = if (symbol.isUpperCase()) "w" else "b"
+    return "$color${symbol.lowercaseChar()}"
+}
+
 fun displayedBoardSquares(
     board: List<BoardSquare>,
     orientationSide: String,
@@ -1200,16 +1255,35 @@ fun showLineNextPlyCount(
 ): Int =
     (currentPlyCount + 1).coerceAtMost(line.plies.size)
 
+data class SharedDrillSnapshot(
+    val plyIndex: Int,
+    val positionFen: String,
+)
+
+fun sharedDrillSnapshot(
+    handle: Long,
+    fallbackPlyIndex: Int = 0,
+): SharedDrillSnapshot {
+    if (handle == 0L) {
+        return SharedDrillSnapshot(fallbackPlyIndex.coerceAtLeast(0), STARTING_POSITION_FEN)
+    }
+    return SharedDrillSnapshot(
+        plyIndex = SharedCoreBridge.sharedDrillPlyIndex(handle).coerceAtLeast(0),
+        positionFen = SharedCoreBridge.sharedDrillPositionFen(handle).orEmpty()
+            .ifBlank { STARTING_POSITION_FEN },
+    )
+}
+
 fun resetSharedDrillForOpening(
     handle: Long,
     opening: OpeningSummary,
-): Int {
-    if (handle == 0L) return 0
+): SharedDrillSnapshot {
+    if (handle == 0L) return SharedDrillSnapshot(0, STARTING_POSITION_FEN)
     SharedCoreBridge.resetSharedDrillSession(handle)
     if (opening.side.isBlackSide()) {
         SharedCoreBridge.autoplaySharedDrillNext(handle)
     }
-    return SharedCoreBridge.sharedDrillPlyIndex(handle).coerceAtLeast(0)
+    return sharedDrillSnapshot(handle)
 }
 
 fun undoDrillPlyCount(
@@ -1382,3 +1456,4 @@ private fun JSONObject.optStringList(name: String): List<String> {
 private const val SHARED_DRILL_ACCEPTED = 1
 private const val SHARED_DRILL_INCORRECT = 2
 private const val SHARED_DRILL_LINE_COMPLETE = 5
+private const val STARTING_POSITION_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

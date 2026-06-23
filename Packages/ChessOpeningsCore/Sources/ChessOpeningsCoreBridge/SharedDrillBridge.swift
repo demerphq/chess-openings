@@ -67,6 +67,28 @@ public func chessOpeningsCoreSharedDrillStatus(_ handle: Int64) -> Int32 {
     return SharedDrillBridgeStatus(session.status).rawValue
 }
 
+@_cdecl("chess_openings_core_shared_drill_position_fen")
+public func chessOpeningsCoreSharedDrillPositionFEN(
+    _ handle: Int64,
+    _ buffer: UnsafeMutablePointer<CChar>?,
+    _ capacity: Int32
+) -> Int32 {
+    guard let session = SharedDrillBridgeStore.shared.session(for: handle) else {
+        return -1
+    }
+    guard let buffer, capacity > 0 else {
+        return Int32(session.positionFEN.utf8.count)
+    }
+
+    let utf8 = Array(session.positionFEN.utf8)
+    let writableCount = min(utf8.count, Int(capacity) - 1)
+    for index in 0..<writableCount {
+        buffer[index] = CChar(bitPattern: utf8[index])
+    }
+    buffer[writableCount] = 0
+    return Int32(utf8.count)
+}
+
 @_cdecl("chess_openings_core_shared_drill_reset")
 public func chessOpeningsCoreSharedDrillReset(_ handle: Int64) -> Int32 {
     guard let session = SharedDrillBridgeStore.shared.session(for: handle) else {

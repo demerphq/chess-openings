@@ -139,6 +139,21 @@ class OpeningParserTest {
     }
 
     @Test
+    fun buildsBoardFromFenForSharedDrillPosition() {
+        val fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"
+        val board = boardSquaresFromFen(fen, highlightedMove = "e7e5")
+            .associate { it.coordinate to it }
+
+        assertEquals("wp", board["e4"]?.pieceCode)
+        assertEquals("bp", board["e5"]?.pieceCode)
+        assertEquals("wn", board["f3"]?.pieceCode)
+        assertEquals("", board["e2"]?.pieceCode)
+        assertEquals("", board["g1"]?.pieceCode)
+        assertEquals(true, board["e7"]?.highlighted)
+        assertEquals(true, board["e5"]?.highlighted)
+    }
+
+    @Test
     fun orientsDisplayedBoardByRepertoireSide() {
         val board = boardSquaresAfterPlies(emptyList())
 

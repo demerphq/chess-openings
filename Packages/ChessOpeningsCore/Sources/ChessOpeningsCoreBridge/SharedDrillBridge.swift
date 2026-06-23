@@ -76,6 +76,15 @@ public func chessOpeningsCoreSharedDrillReset(_ handle: Int64) -> Int32 {
     return 1
 }
 
+@_cdecl("chess_openings_core_shared_drill_undo")
+public func chessOpeningsCoreSharedDrillUndo(_ handle: Int64) -> Int32 {
+    guard let session = SharedDrillBridgeStore.shared.session(for: handle) else {
+        return 0
+    }
+    session.undo()
+    return Int32(session.plyIndex)
+}
+
 @_cdecl("chess_openings_core_shared_drill_release")
 public func chessOpeningsCoreSharedDrillRelease(_ handle: Int64) {
     SharedDrillBridgeStore.shared.remove(handle)

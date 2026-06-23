@@ -127,6 +127,26 @@ public final class SharedDrillSession {
         board = Board(position: .standard)
     }
 
+    public func undo() {
+        guard !moves.isEmpty else { return }
+
+        var restoredMoves = moves
+        var removedUserMove = false
+        while !restoredMoves.isEmpty {
+            let removed = restoredMoves.removeLast()
+            if removed.byUser {
+                removedUserMove = true
+                break
+            }
+        }
+        guard removedUserMove else {
+            reset()
+            return
+        }
+
+        rebuild(from: restoredMoves)
+    }
+
     private func apply(_ move: Move, san: String, byUser: Bool) -> SharedDrillMove {
         var committed = board.move(pieceAt: move.start, to: move.end) ?? move
         if case .promotion = board.state,
@@ -142,6 +162,23 @@ public final class SharedDrillSession {
         )
         moves.append(record)
         return record
+    }
+
+    private func rebuild(from restoredMoves: [SharedDrillMove]) {
+        status = .waitingForUser
+        board = Board(position: .standard)
+        moves = []
+
+        for record in restoredMoves {
+            guard let move = SANParser.parse(move: record.san, in: board.position) else {
+                reset()
+                return
+            }
+            _ = apply(move, san: record.san, byUser: record.byUser)
+        }
+        if plyIndex >= line.plies.count {
+            status = .lineComplete
+        }
     }
 
     private static func sameChessMove(_ lhs: Move, _ rhs: Move) -> Bool {

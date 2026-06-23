@@ -73,6 +73,31 @@ import Testing
     #expect(session.nextBookPly?.san == "e4")
 }
 
+@Test func sharedDrillUndoRemovesUserMoveAndScriptedReply() throws {
+    let session = SharedDrillSession(line: italianLine)
+    _ = session.submit(uci: "e2e4")
+
+    session.undo()
+
+    #expect(session.status == .waitingForUser)
+    #expect(session.plyIndex == 0)
+    #expect(session.moves.isEmpty)
+    #expect(session.nextBookPly?.san == "e4")
+}
+
+@Test func sharedDrillUndoPreservesBlackSideOpeningMove() throws {
+    let session = SharedDrillSession(line: italianLine)
+    _ = session.autoplayNextBookPly()
+    _ = session.submit(uci: "e7e5")
+
+    session.undo()
+
+    #expect(session.status == .waitingForUser)
+    #expect(session.plyIndex == 1)
+    #expect(session.moves.map(\.san) == ["e4"])
+    #expect(session.nextBookPly?.san == "e5")
+}
+
 private let italianLine = Line(
     name: "Bc5",
     source: .masters,

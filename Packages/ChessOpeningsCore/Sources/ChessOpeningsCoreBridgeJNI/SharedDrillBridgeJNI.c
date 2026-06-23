@@ -18,6 +18,7 @@ extern int32_t chess_openings_core_shared_drill_autoplay_next(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_status(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_reset(int64_t handle);
+extern int32_t chess_openings_core_shared_drill_undo(int64_t handle);
 extern void chess_openings_core_shared_drill_release(int64_t handle);
 
 JNIEXPORT jlong JNICALL
@@ -107,6 +108,17 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedDrillStatus(
     (void)env;
     (void)receiver;
     return (jint)chess_openings_core_shared_drill_status((int64_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_undoSharedDrillSession(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+    (void)env;
+    (void)receiver;
+    return (jint)chess_openings_core_shared_drill_undo((int64_t)handle);
 }
 
 JNIEXPORT jint JNICALL

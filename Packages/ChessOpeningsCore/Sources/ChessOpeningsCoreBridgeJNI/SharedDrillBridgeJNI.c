@@ -19,6 +19,7 @@ extern int32_t chess_openings_core_shared_drill_autoplay_next(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_status(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_position_fen(int64_t handle, char *buffer, int32_t capacity);
+extern int32_t chess_openings_core_shared_legal_targets_json(const char *fen, const char *source, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_drill_reset(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_restore(int64_t handle, int32_t ply_index, int32_t user_side);
 extern int32_t chess_openings_core_shared_drill_undo(int64_t handle);
@@ -186,6 +187,61 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedDrillPositionFen(
     (void)env;
     (void)receiver;
     (void)handle;
+    return 0;
+#endif
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_legalTargetsJson(
+    JNIEnv *env,
+    jobject receiver,
+    jstring fen,
+    jstring source
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    if (fen == 0 || source == 0) {
+        return 0;
+    }
+    const char *fen_chars = (*env)->GetStringUTFChars(env, fen, 0);
+    const char *source_chars = (*env)->GetStringUTFChars(env, source, 0);
+    int32_t length = chess_openings_core_shared_legal_targets_json(
+        fen_chars,
+        source_chars,
+        0,
+        0
+    );
+    if (length < 0) {
+        (*env)->ReleaseStringUTFChars(env, fen, fen_chars);
+        (*env)->ReleaseStringUTFChars(env, source, source_chars);
+        return 0;
+    }
+    char *buffer = (char *)malloc((size_t)length + 1);
+    if (buffer == 0) {
+        (*env)->ReleaseStringUTFChars(env, fen, fen_chars);
+        (*env)->ReleaseStringUTFChars(env, source, source_chars);
+        return 0;
+    }
+    int32_t written = chess_openings_core_shared_legal_targets_json(
+        fen_chars,
+        source_chars,
+        buffer,
+        length + 1
+    );
+    (*env)->ReleaseStringUTFChars(env, fen, fen_chars);
+    (*env)->ReleaseStringUTFChars(env, source, source_chars);
+    if (written < 0) {
+        free(buffer);
+        return 0;
+    }
+    jstring result = (*env)->NewStringUTF(env, buffer);
+    free(buffer);
+    return result;
+#else
+    (void)env;
+    (void)receiver;
+    (void)fen;
+    (void)source;
     return 0;
 #endif
 }

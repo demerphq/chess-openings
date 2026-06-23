@@ -101,6 +101,22 @@ class OpeningParserTest {
     }
 
     @Test
+    fun parsesSharedLegalTargets() {
+        val targets = parseSharedLegalTargets(
+            """[{"square":"e4","isCapture":false},{"square":"d5","isCapture":true}]""",
+        )
+
+        assertEquals(
+            listOf(
+                SharedLegalTargetSummary("e4", isCapture = false),
+                SharedLegalTargetSummary("d5", isCapture = true),
+            ),
+            targets,
+        )
+        assertEquals(emptyList<SharedLegalTargetSummary>(), parseSharedLegalTargets("invalid"))
+    }
+
+    @Test
     fun formatsDisplayLabels() {
         val line = LineSummary(
             name = "Bc5",

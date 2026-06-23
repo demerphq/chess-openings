@@ -35,8 +35,6 @@ expected to differ by platform.
   - Show a playout best-move arrow/solution.
 - Board interaction polish:
   - Drag and drop pieces.
-  - Show legal target highlights for the selected piece.
-  - Show capture target indicators.
   - Animate pieces moving between squares.
 
 ## Missing From iPhone

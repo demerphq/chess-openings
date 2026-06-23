@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -1383,6 +1384,20 @@ fun DrillScreen(
     val visiblePlies = line.plies.take(currentPlyCount)
     val visibleMoveList = visiblePlies + playoutMoves.map { it.toPlySummary() }
     val displayedPositionFen = playoutPositionFen ?: currentPositionFen
+    val activeSelectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare
+    val legalTargets = remember(displayedPositionFen, activeSelectedCoordinate) {
+        activeSelectedCoordinate?.let { source ->
+            parseSharedLegalTargets(
+                SharedCoreBridge.legalTargetsJson(displayedPositionFen, source),
+            )
+        }.orEmpty()
+    }
+    val legalTargetCoordinates = legalTargets
+        .filterNot { it.isCapture }
+        .mapTo(mutableSetOf()) { it.square }
+    val captureTargetCoordinates = legalTargets
+        .filter { it.isCapture }
+        .mapTo(mutableSetOf()) { it.square }
     val board = remember(displayedPositionFen, visiblePlies, inPlayout) {
         boardSquaresFromFen(
             fen = displayedPositionFen,
@@ -1899,6 +1914,8 @@ fun DrillScreen(
                 selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
                 hintCoordinate = if (inPlayout) null else hintCoordinate,
                 solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
+                legalTargetCoordinates = legalTargetCoordinates,
+                captureTargetCoordinates = captureTargetCoordinates,
                 boardArrow = boardArrow,
                 moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
                 onSquareClick = { coordinate ->
@@ -2346,6 +2363,8 @@ fun BoardGrid(
     selectedCoordinate: String? = null,
     hintCoordinate: String? = null,
     solutionCoordinates: Set<String> = emptySet(),
+    legalTargetCoordinates: Set<String> = emptySet(),
+    captureTargetCoordinates: Set<String> = emptySet(),
     boardArrow: BoardArrow? = null,
     moveQualityAnnotation: MoveQualityAnnotation? = null,
     onSquareClick: ((String) -> Unit)? = null,
@@ -2372,6 +2391,8 @@ fun BoardGrid(
                                 selected = square.coordinate == selectedCoordinate,
                                 hinted = square.coordinate == hintCoordinate,
                                 solution = square.coordinate in solutionCoordinates,
+                                legalTarget = square.coordinate in legalTargetCoordinates,
+                                captureTarget = square.coordinate in captureTargetCoordinates,
                                 moveQuality = moveQualityAnnotation
                                     ?.takeIf { it.square == square.coordinate }
                                     ?.quality,
@@ -2610,6 +2631,8 @@ fun BoardSquareCell(
     selected: Boolean = false,
     hinted: Boolean = false,
     solution: Boolean = false,
+    legalTarget: Boolean = false,
+    captureTarget: Boolean = false,
     moveQuality: String? = null,
     onClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -2619,10 +2642,11 @@ fun BoardSquareCell(
         selected -> Color(0xFF6EA4B8)
         solution -> Color(0xFF88B6D8)
         hinted -> Color(0xFF88B6D8)
+        legalTarget -> Color(0xFFC4D8E8)
         square.highlighted -> Color(0xFFF2E29B)
         else -> baseColor
     }
-    val hasHighlight = selected || solution || hinted || square.highlighted
+    val hasHighlight = selected || solution || hinted || legalTarget || square.highlighted
 
     Box(
         modifier = modifier
@@ -2655,6 +2679,15 @@ fun BoardSquareCell(
                 color = Color(0xFF3D332C).copy(alpha = 0.72f),
                 modifier = Modifier.align(Alignment.BottomEnd),
             )
+        }
+        if (captureTarget) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                    color = Color(0x99C74747),
+                    radius = size.minDimension * 0.40f,
+                    style = Stroke(width = size.minDimension * 0.09f),
+                )
+            }
         }
         pieceResourceId(square.pieceCode)?.let { resourceId ->
             Image(

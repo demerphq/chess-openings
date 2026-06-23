@@ -17,6 +17,7 @@ object SharedCoreBridge {
     external fun sharedDrillPlyIndex(handle: Long): Int
     external fun sharedDrillStatus(handle: Long): Int
     external fun sharedDrillPositionFen(handle: Long): String?
+    external fun legalTargetsJson(fen: String, source: String): String?
     external fun undoSharedDrillSession(handle: Long): Int
     external fun resetSharedDrillSession(handle: Long): Int
     external fun restoreSharedDrillSession(handle: Long, plyIndex: Int, userSide: Int): Int
@@ -76,6 +77,25 @@ data class SharedPlayoutMoveSummary(
     val fenAfterMove: String,
     val quality: String?,
 )
+
+data class SharedLegalTargetSummary(
+    val square: String,
+    val isCapture: Boolean,
+)
+
+fun parseSharedLegalTargets(jsonText: String?): List<SharedLegalTargetSummary> {
+    if (jsonText.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val targets = JSONArray(jsonText)
+        List(targets.length()) { index ->
+            val target = targets.getJSONObject(index)
+            SharedLegalTargetSummary(
+                square = target.optString("square"),
+                isCapture = target.optBoolean("isCapture"),
+            )
+        }.filter { it.square.length == 2 }
+    }.getOrElse { emptyList() }
+}
 
 fun parseSharedPlayoutMoves(jsonText: String?): List<SharedPlayoutMoveSummary> {
     if (jsonText.isNullOrBlank()) return emptyList()

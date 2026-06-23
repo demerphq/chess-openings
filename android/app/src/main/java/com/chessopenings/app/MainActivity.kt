@@ -156,6 +156,20 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
             .putInt("$prefix.timesCompleted", next.timesCompleted)
             .apply()
     }
+
+    fun clearAll() {
+        preferences.edit().clear().apply()
+    }
+}
+
+class AndroidSettingsStore(private val preferences: SharedPreferences) {
+    var masteryThreshold: Int
+        get() = preferences.getInt("masteryThreshold", MASTERY_THRESHOLD)
+        set(value) {
+            preferences.edit()
+                .putInt("masteryThreshold", value.coerceIn(1, 10))
+                .apply()
+        }
 }
 
 class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
@@ -258,6 +272,11 @@ enum class AppTab(
         subtitle = "seed openings and saved repertoires",
         glyph = "L",
     ),
+    Settings(
+        title = "settings",
+        subtitle = "training preferences",
+        glyph = "S",
+    ),
 }
 
 fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
@@ -306,7 +325,13 @@ fun ChessOpeningsApp() {
             context.getSharedPreferences("drill-snapshot", Context.MODE_PRIVATE),
         )
     }
+    val settingsStore = remember {
+        AndroidSettingsStore(
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE),
+        )
+    }
     var progressRevision by remember { mutableIntStateOf(0) }
+    var settingsRevision by remember { mutableIntStateOf(0) }
     remember {
         check(SharedCoreBridge.isChessKitAvailable()) {
             "Shared ChessOpeningsCore bridge is unavailable"
@@ -346,8 +371,11 @@ fun ChessOpeningsApp() {
                 openings = openings,
                 progressStore = progressStore,
                 drillSnapshotStore = drillSnapshotStore,
+                settingsStore = settingsStore,
                 progressRevision = progressRevision,
+                settingsRevision = settingsRevision,
                 onProgressChanged = { progressRevision += 1 },
+                onSettingsChanged = { settingsRevision += 1 },
             )
         }
     }
@@ -358,8 +386,11 @@ fun ChessOpeningsHome(
     openings: List<OpeningSummary>,
     progressStore: AndroidProgressStore,
     drillSnapshotStore: AndroidDrillSnapshotStore,
+    settingsStore: AndroidSettingsStore,
     progressRevision: Int,
+    settingsRevision: Int,
     onProgressChanged: () -> Unit,
+    onSettingsChanged: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
     var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
@@ -385,6 +416,8 @@ fun ChessOpeningsHome(
             restoredSnapshot = selection.restoredSnapshot,
             progressStore = progressStore,
             drillSnapshotStore = drillSnapshotStore,
+            settingsStore = settingsStore,
+            settingsRevision = settingsRevision,
             onProgressChanged = onProgressChanged,
             onBack = {
                 drillSnapshotStore.clear()
@@ -406,7 +439,16 @@ fun ChessOpeningsHome(
     ) {
         Box(modifier = Modifier.weight(1f)) {
             val opening = detailOpening
-            if (opening == null) {
+            if (selectedTab == AppTab.Settings) {
+                SettingsScreen(
+                    settingsStore = settingsStore,
+                    progressStore = progressStore,
+                    settingsRevision = settingsRevision,
+                    onSettingsChanged = onSettingsChanged,
+                    onProgressReset = onProgressChanged,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (opening == null) {
                 OpeningCatalogue(
                     openings = openings,
                     tab = selectedTab,
@@ -420,6 +462,8 @@ fun ChessOpeningsHome(
                     opening = opening,
                     progressStore = progressStore,
                     progressRevision = progressRevision,
+                    settingsStore = settingsStore,
+                    settingsRevision = settingsRevision,
                     onBack = { detailOpening = null },
                     onStartDrill = { line ->
                         drillSelection = DrillSelection(opening, line)
@@ -529,6 +573,124 @@ fun OpeningCatalogue(
                         }
                     }
                 }
+
+                AppTab.Settings -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    settingsStore: AndroidSettingsStore,
+    progressStore: AndroidProgressStore,
+    settingsRevision: Int,
+    onSettingsChanged: () -> Unit,
+    onProgressReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            CatalogueHeader(tab = AppTab.Settings, openingCount = null)
+        }
+        item {
+            SectionHeader("mastery")
+        }
+        item {
+            SettingStepperRow(
+                label = "correct streak",
+                value = masteryThreshold,
+                canDecrement = masteryThreshold > 1,
+                canIncrement = masteryThreshold < 10,
+                onDecrement = {
+                    settingsStore.masteryThreshold = masteryThreshold - 1
+                    onSettingsChanged()
+                },
+                onIncrement = {
+                    settingsStore.masteryThreshold = masteryThreshold + 1
+                    onSettingsChanged()
+                },
+            )
+        }
+        item {
+            SectionHeader("data")
+        }
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "line progress",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    TextButton(
+                        onClick = {
+                            progressStore.clearAll()
+                            onProgressReset()
+                        },
+                    ) {
+                        Text("reset")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingStepperRow(
+    label: String,
+    value: Int,
+    canDecrement: Boolean,
+    canIncrement: Boolean,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = value.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDecrement, enabled = canDecrement) {
+                    Text("-")
+                }
+                TextButton(onClick = onIncrement, enabled = canIncrement) {
+                    Text("+")
+                }
             }
         }
     }
@@ -537,7 +699,7 @@ fun OpeningCatalogue(
 @Composable
 fun CatalogueHeader(
     tab: AppTab,
-    openingCount: Int,
+    openingCount: Int?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -551,7 +713,11 @@ fun CatalogueHeader(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "$openingCount openings · ${tab.subtitle}",
+                text = if (openingCount == null) {
+                    tab.subtitle
+                } else {
+                    "$openingCount openings · ${tab.subtitle}"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
             )
@@ -564,10 +730,13 @@ fun OpeningDetailScreen(
     opening: OpeningSummary,
     progressStore: AndroidProgressStore,
     progressRevision: Int,
+    settingsStore: AndroidSettingsStore,
+    settingsRevision: Int,
     onBack: () -> Unit,
     onStartDrill: (LineSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -633,6 +802,7 @@ fun OpeningDetailScreen(
             lines = opening.lines.filter { it.source == "masters" },
             progressStore = progressStore,
             progressRevision = progressRevision,
+            masteryThreshold = masteryThreshold,
             onStartDrill = onStartDrill,
         )
 
@@ -642,6 +812,7 @@ fun OpeningDetailScreen(
             lines = opening.lines.filter { it.source == "open" },
             progressStore = progressStore,
             progressRevision = progressRevision,
+            masteryThreshold = masteryThreshold,
             onStartDrill = onStartDrill,
         )
     }
@@ -654,10 +825,13 @@ fun DrillScreen(
     restoredSnapshot: PersistedDrillSnapshot?,
     progressStore: AndroidProgressStore,
     drillSnapshotStore: AndroidDrillSnapshotStore,
+    settingsStore: AndroidSettingsStore,
+    settingsRevision: Int,
     onProgressChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
+    val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
     var currentPlyCount by remember(line) { mutableIntStateOf(0) }
     var currentPositionFen by remember(line) { mutableStateOf(STARTING_POSITION_FEN) }
     var sharedDrillHandle by remember(line) { mutableStateOf(0L) }
@@ -729,6 +903,7 @@ fun DrillScreen(
                     opening = opening,
                     line = line,
                     madeMistake = madeMistake,
+                    masteryThreshold = masteryThreshold,
                     alreadyRecorded = completionRecorded,
                     onRecorded = {
                         completionRecorded = true
@@ -809,6 +984,7 @@ fun DrillScreen(
                                     opening = opening,
                                     line = line,
                                     madeMistake = madeMistake,
+                                    masteryThreshold = masteryThreshold,
                                     alreadyRecorded = completionRecorded,
                                     onRecorded = {
                                         completionRecorded = true
@@ -1145,10 +1321,11 @@ fun OpeningRow(
 fun LineRow(
     line: LineSummary,
     progress: LineProgressSummary,
+    masteryThreshold: Int,
     onClick: () -> Unit,
 ) {
     val streak = progress.correctStreak
-    val threshold = MASTERY_THRESHOLD
+    val threshold = masteryThreshold
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1232,6 +1409,7 @@ private fun LazyListScope.detailLineSection(
     lines: List<LineSummary>,
     progressStore: AndroidProgressStore,
     progressRevision: Int,
+    masteryThreshold: Int,
     onStartDrill: (LineSummary) -> Unit,
 ) {
     if (lines.isEmpty()) return
@@ -1247,6 +1425,7 @@ private fun LazyListScope.detailLineSection(
         LineRow(
             line = line,
             progress = progress,
+            masteryThreshold = masteryThreshold,
             onClick = { onStartDrill(line) },
         )
     }
@@ -1540,6 +1719,7 @@ fun recordDrillCompletionIfNeeded(
     opening: OpeningSummary,
     line: LineSummary,
     madeMistake: Boolean,
+    masteryThreshold: Int,
     alreadyRecorded: Boolean,
     onRecorded: () -> Unit,
 ) {
@@ -1548,6 +1728,7 @@ fun recordDrillCompletionIfNeeded(
         opening = opening,
         line = line,
         madeMistake = madeMistake,
+        threshold = masteryThreshold,
     )
     drillSnapshotStore.clear()
     onRecorded()

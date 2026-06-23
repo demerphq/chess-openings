@@ -2,6 +2,7 @@ package com.chessopenings.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.json.JSONObject
 
 class OpeningParserTest {
     @Test
@@ -87,6 +88,21 @@ class OpeningParserTest {
         assertEquals("Masters", sourceLabel("masters"))
         assertEquals("2 moves", lineDepthLabel(line))
         assertEquals("e4 · e2e4", firstMoveLabel(line))
+    }
+
+    @Test
+    fun encodesLineSummaryForSharedCoreBridge() {
+        val json = JSONObject(sampleDrillLine().toCoreJson())
+        val plies = json.getJSONArray("plies")
+
+        assertEquals("Bc5", json.getString("name"))
+        assertEquals("masters", json.getString("source"))
+        assertEquals(0, json.getJSONArray("tags").length())
+        assertEquals(3, plies.length())
+        assertEquals("e4", plies.getJSONObject(0).getString("san"))
+        assertEquals("e2e4", plies.getJSONObject(0).getString("uci"))
+        assertEquals("Nf3", plies.getJSONObject(2).getString("san"))
+        assertEquals(0, plies.getJSONObject(2).getJSONArray("alternativeSans").length())
     }
 
     @Test

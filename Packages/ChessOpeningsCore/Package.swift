@@ -20,7 +20,13 @@ let package = Package(
         ),
         .target(
             name: "ChessOpeningsCoreBridge",
-            dependencies: ["ChessOpeningsCore"]
+            dependencies: [
+                "ChessOpeningsCore",
+                "ChessOpeningsCoreBridgeJNI",
+            ]
+        ),
+        .target(
+            name: "ChessOpeningsCoreBridgeJNI"
         ),
         .testTarget(
             name: "ChessOpeningsCoreTests",

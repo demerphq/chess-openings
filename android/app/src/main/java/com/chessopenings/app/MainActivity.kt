@@ -171,6 +171,13 @@ fun ChessOpeningsApp() {
             .bufferedReader()
             .use { parseOpeningSummaries(it.readText()) }
     }
+    remember(openings) {
+        openings.firstOrNull()?.lines?.firstOrNull()?.let { line ->
+            check(SharedCoreBridge.canRunSharedDrillSession(line)) {
+                "Shared DrillSession cannot run bundled line data"
+            }
+        }
+    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(

@@ -265,6 +265,24 @@ class OpeningParserTest {
     }
 
     @Test
+    fun findsDrillSelectionForPersistedSnapshot() {
+        val line = sampleDrillLine()
+        val opening = sampleOpening(side = "white", line = line)
+        val snapshot = PersistedDrillSnapshot(
+            lineKey = progressKey(opening, line),
+            plyIndex = 2,
+            madeMistake = true,
+        )
+
+        val selection = drillSelectionForSnapshot(listOf(opening), snapshot)
+
+        assertEquals(opening, selection?.opening)
+        assertEquals(line, selection?.line)
+        assertEquals(snapshot, selection?.restoredSnapshot)
+        assertEquals(null, drillSelectionForSnapshot(emptyList(), snapshot))
+    }
+
+    @Test
     fun restrictsDrillStartSquareToExpectedUserPiece() {
         val line = sampleDrillLine()
         val startingBoard = boardSquaresAfterPlies(emptyList())
@@ -277,6 +295,8 @@ class OpeningParserTest {
         assertEquals(true, canStartDrillMove("e7", blackReplyBoard, line.plies[1], "black"))
         assertEquals('w', pieceColorCode("white"))
         assertEquals('b', pieceColorCode("black"))
+        assertEquals(0, "white".toSharedDrillUserSide())
+        assertEquals(1, "black".toSharedDrillUserSide())
         assertEquals("Select the piece for e4", selectExpectedPieceFeedback(line.plies[0]))
     }
 

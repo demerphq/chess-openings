@@ -107,6 +107,13 @@ data class BoardSquare(
 data class DrillSelection(
     val opening: OpeningSummary,
     val line: LineSummary,
+    val restoredSnapshot: PersistedDrillSnapshot? = null,
+)
+
+data class PersistedDrillSnapshot(
+    val lineKey: String,
+    val plyIndex: Int,
+    val madeMistake: Boolean,
 )
 
 data class LineProgressSummary(
@@ -151,6 +158,43 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
     }
 }
 
+class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
+    fun latest(): PersistedDrillSnapshot? {
+        val lineKey = preferences.getString("active.lineKey", null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return PersistedDrillSnapshot(
+            lineKey = lineKey,
+            plyIndex = preferences.getInt("active.plyIndex", 0),
+            madeMistake = preferences.getBoolean("active.madeMistake", false),
+        )
+    }
+
+    fun save(
+        opening: OpeningSummary,
+        line: LineSummary,
+        plyIndex: Int,
+        madeMistake: Boolean,
+    ) {
+        if (plyIndex <= initialDrillPlyCount(opening, line) || plyIndex >= line.plies.size) {
+            clear()
+            return
+        }
+        preferences.edit()
+            .putString("active.lineKey", progressKey(opening, line))
+            .putInt("active.plyIndex", plyIndex)
+            .putBoolean("active.madeMistake", madeMistake)
+            .apply()
+    }
+
+    fun clear() {
+        preferences.edit()
+            .remove("active.lineKey")
+            .remove("active.plyIndex")
+            .remove("active.madeMistake")
+            .apply()
+    }
+}
+
 fun recordCompletionProgress(
     current: LineProgressSummary,
     madeMistake: Boolean,
@@ -178,6 +222,20 @@ fun progressKey(
         line.plies.joinToString(separator = " ") { "${it.san}:${it.uci}" },
     ).joinToString(separator = "\u001F")
     return "line.${sha256Hex(identity)}"
+}
+
+fun drillSelectionForSnapshot(
+    openings: List<OpeningSummary>,
+    snapshot: PersistedDrillSnapshot,
+): DrillSelection? {
+    openings.forEach { opening ->
+        opening.lines.forEach { line ->
+            if (progressKey(opening, line) == snapshot.lineKey) {
+                return DrillSelection(opening, line, snapshot)
+            }
+        }
+    }
+    return null
 }
 
 private fun sha256Hex(value: String): String {
@@ -243,6 +301,11 @@ fun ChessOpeningsApp() {
             context.getSharedPreferences("line-progress", Context.MODE_PRIVATE),
         )
     }
+    val drillSnapshotStore = remember {
+        AndroidDrillSnapshotStore(
+            context.getSharedPreferences("drill-snapshot", Context.MODE_PRIVATE),
+        )
+    }
     var progressRevision by remember { mutableIntStateOf(0) }
     remember {
         check(SharedCoreBridge.isChessKitAvailable()) {
@@ -282,6 +345,7 @@ fun ChessOpeningsApp() {
             ChessOpeningsHome(
                 openings = openings,
                 progressStore = progressStore,
+                drillSnapshotStore = drillSnapshotStore,
                 progressRevision = progressRevision,
                 onProgressChanged = { progressRevision += 1 },
             )
@@ -293,20 +357,39 @@ fun ChessOpeningsApp() {
 fun ChessOpeningsHome(
     openings: List<OpeningSummary>,
     progressStore: AndroidProgressStore,
+    drillSnapshotStore: AndroidDrillSnapshotStore,
     progressRevision: Int,
     onProgressChanged: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Train) }
     var drillSelection by remember { mutableStateOf<DrillSelection?>(null) }
     var detailOpening by remember { mutableStateOf<OpeningSummary?>(null) }
+    var didAutoResume by remember { mutableStateOf(false) }
+
+    LaunchedEffect(openings) {
+        if (didAutoResume) return@LaunchedEffect
+        didAutoResume = true
+        val snapshot = drillSnapshotStore.latest() ?: return@LaunchedEffect
+        val restored = drillSelectionForSnapshot(openings, snapshot) ?: run {
+            drillSnapshotStore.clear()
+            return@LaunchedEffect
+        }
+        detailOpening = restored.opening
+        drillSelection = restored
+    }
 
     drillSelection?.let { selection ->
         DrillScreen(
             opening = selection.opening,
             line = selection.line,
+            restoredSnapshot = selection.restoredSnapshot,
             progressStore = progressStore,
+            drillSnapshotStore = drillSnapshotStore,
             onProgressChanged = onProgressChanged,
-            onBack = { drillSelection = null },
+            onBack = {
+                drillSnapshotStore.clear()
+                drillSelection = null
+            },
         )
         return
     }
@@ -568,7 +651,9 @@ fun OpeningDetailScreen(
 fun DrillScreen(
     opening: OpeningSummary,
     line: LineSummary,
+    restoredSnapshot: PersistedDrillSnapshot?,
     progressStore: AndroidProgressStore,
+    drillSnapshotStore: AndroidDrillSnapshotStore,
     onProgressChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -597,7 +682,12 @@ fun DrillScreen(
     DisposableEffect(opening, line) {
         val handle = SharedCoreBridge.createSharedDrillSession(line)
         sharedDrillHandle = handle
-        val snapshot = resetSharedDrillForOpening(handle, opening)
+        val snapshot = restoreOrResetSharedDrill(
+            handle = handle,
+            opening = opening,
+            line = line,
+            saved = restoredSnapshot?.takeIf { it.lineKey == progressKey(opening, line) },
+        )
         currentPlyCount = snapshot.plyIndex
         currentPositionFen = snapshot.positionFen
         selectedSquare = null
@@ -605,7 +695,7 @@ fun DrillScreen(
         hintShown = false
         solutionShown = false
         showLineIsPlaying = false
-        madeMistake = false
+        madeMistake = restoredSnapshot?.madeMistake == true
         completionRecorded = false
         onDispose {
             if (handle != 0L) {
@@ -635,6 +725,7 @@ fun DrillScreen(
             if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
                 recordDrillCompletionIfNeeded(
                     progressStore = progressStore,
+                    drillSnapshotStore = drillSnapshotStore,
                     opening = opening,
                     line = line,
                     madeMistake = madeMistake,
@@ -644,6 +735,8 @@ fun DrillScreen(
                         onProgressChanged()
                     },
                 )
+            } else {
+                drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
             }
         }
         if (currentPlyCount >= line.plies.size) {
@@ -712,6 +805,7 @@ fun DrillScreen(
                             if (currentPlyCount >= line.plies.size) {
                                 recordDrillCompletionIfNeeded(
                                     progressStore = progressStore,
+                                    drillSnapshotStore = drillSnapshotStore,
                                     opening = opening,
                                     line = line,
                                     madeMistake = madeMistake,
@@ -721,6 +815,8 @@ fun DrillScreen(
                                         onProgressChanged()
                                     },
                                 )
+                            } else {
+                                drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                             }
                             selectedSquare = null
                             feedback = null
@@ -731,6 +827,7 @@ fun DrillScreen(
 
                         SHARED_DRILL_INCORRECT -> {
                             madeMistake = true
+                            drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
                             selectedSquare = coordinate
                             feedback = expectedMoveFeedback(nextPly)
                             solutionShown = true
@@ -801,6 +898,7 @@ fun DrillScreen(
                     currentPositionFen = snapshot.positionFen
                     madeMistake = false
                     completionRecorded = false
+                    drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -819,6 +917,7 @@ fun DrillScreen(
                     currentPositionFen = snapshot.positionFen
                     madeMistake = false
                     completionRecorded = false
+                    drillSnapshotStore.clear()
                     selectedSquare = null
                     feedback = null
                     hintShown = false
@@ -1437,6 +1536,7 @@ fun showLineNextPlyCount(
 
 fun recordDrillCompletionIfNeeded(
     progressStore: AndroidProgressStore,
+    drillSnapshotStore: AndroidDrillSnapshotStore,
     opening: OpeningSummary,
     line: LineSummary,
     madeMistake: Boolean,
@@ -1449,6 +1549,7 @@ fun recordDrillCompletionIfNeeded(
         line = line,
         madeMistake = madeMistake,
     )
+    drillSnapshotStore.clear()
     onRecorded()
 }
 
@@ -1483,6 +1584,24 @@ fun resetSharedDrillForOpening(
     return sharedDrillSnapshot(handle)
 }
 
+fun restoreOrResetSharedDrill(
+    handle: Long,
+    opening: OpeningSummary,
+    line: LineSummary,
+    saved: PersistedDrillSnapshot?,
+): SharedDrillSnapshot {
+    if (handle == 0L) return SharedDrillSnapshot(0, STARTING_POSITION_FEN)
+    if (saved != null && saved.plyIndex > initialDrillPlyCount(opening, line)) {
+        SharedCoreBridge.restoreSharedDrillSession(
+            handle,
+            saved.plyIndex,
+            opening.side.toSharedDrillUserSide(),
+        )
+        return sharedDrillSnapshot(handle, fallbackPlyIndex = saved.plyIndex)
+    }
+    return resetSharedDrillForOpening(handle, opening)
+}
+
 fun undoDrillPlyCount(
     currentPlyCount: Int,
     initialPlyCount: Int,
@@ -1510,6 +1629,9 @@ fun canStartDrillMove(
 
 fun pieceColorCode(openingSide: String): Char =
     if (openingSide.isBlackSide()) 'b' else 'w'
+
+fun String.toSharedDrillUserSide(): Int =
+    if (isBlackSide()) SHARED_DRILL_USER_SIDE_BLACK else SHARED_DRILL_USER_SIDE_WHITE
 
 fun PlySummary.fromCoordinate(): String? =
     uci.takeIf { it.length >= 4 }
@@ -1653,5 +1775,7 @@ private fun JSONObject.optStringList(name: String): List<String> {
 private const val SHARED_DRILL_ACCEPTED = 1
 private const val SHARED_DRILL_INCORRECT = 2
 private const val SHARED_DRILL_LINE_COMPLETE = 5
+private const val SHARED_DRILL_USER_SIDE_WHITE = 0
+private const val SHARED_DRILL_USER_SIDE_BLACK = 1
 private const val MASTERY_THRESHOLD = 3
 private const val STARTING_POSITION_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

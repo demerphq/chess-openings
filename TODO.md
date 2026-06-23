@@ -9,3 +9,8 @@
 - Add Android playout best-move hint arrows once the shared bridge exposes
   Stockfish hint retrieval, matching the Apple playout hint and solution
   behavior.
+- Design and add a contention heatmap board view that shows how many pieces
+  threaten each square and highlights imbalances between the two sides. Define
+  a clear visual treatment that remains readable alongside pieces and existing
+  move highlights, then add a board control for enabling and disabling the
+  view.

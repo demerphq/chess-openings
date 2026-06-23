@@ -2252,11 +2252,19 @@ fun BoardSquareCell(
         square.highlighted -> Color(0xFFF2E29B)
         else -> baseColor
     }
+    val hasHighlight = selected || solution || hinted || square.highlighted
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(background)
+            .then(
+                if (hasHighlight) {
+                    Modifier.border(0.75.dp, Color(0x663D332C))
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (onClick == null) Modifier else Modifier.clickable { onClick(square.coordinate) }
             )

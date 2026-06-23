@@ -9,11 +9,9 @@ import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -2018,25 +2016,27 @@ fun BoardArrowOverlay(
     arrow: BoardArrow,
     orientationSide: String,
 ) {
-    val transition = rememberInfiniteTransition(label = "board arrow")
-    val progress by transition.animateFloat(
-        initialValue = 0.18f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 3_000
-                0.18f at 0
-                0.18f at 150
-                1f at 600
-                1f at 3_000
-            },
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "board arrow progress",
-    )
+    val progress = remember(arrow) { Animatable(0.18f) }
+
+    LaunchedEffect(arrow) {
+        var fullLengthHoldMs = 650L
+        while (true) {
+            progress.snapTo(0.18f)
+            delay(150)
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = 450,
+                    easing = FastOutSlowInEasing,
+                ),
+            )
+            delay(fullLengthHoldMs)
+            fullLengthHoldMs = (fullLengthHoldMs * 2).coerceAtMost(41_600L)
+        }
+    }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        drawBoardArrow(arrow, orientationSide, progress)
+        drawBoardArrow(arrow, orientationSide, progress.value)
     }
 }
 

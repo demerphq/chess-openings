@@ -38,8 +38,6 @@ expected to differ by platform.
   - Show legal target highlights for the selected piece.
   - Show capture target indicators.
   - Animate pieces moving between squares.
-- Drill completion polish:
-  - Fire confetti when a line first becomes learned.
 
 ## Missing From iPhone
 

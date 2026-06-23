@@ -66,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -87,6 +88,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -230,6 +232,15 @@ enum class PlayoutConfirmationAction {
 data class BoardArrow(
     val from: String,
     val to: String,
+)
+
+data class ConfettiParticle(
+    val originX: Float,
+    val originY: Float,
+    val velocityX: Float,
+    val velocityY: Float,
+    val sizeFraction: Float,
+    val color: Color,
 )
 
 data class DrillSelection(
@@ -1354,6 +1365,8 @@ fun DrillScreen(
     var lastPromptAtMillis by remember(line) { mutableStateOf<Long?>(null) }
     var timingEligible by remember(line) { mutableStateOf(false) }
     var completionWasSpeedy by remember(line) { mutableStateOf(false) }
+    var wasLearnedAtSessionStart by remember(line) { mutableStateOf(false) }
+    var confettiTrigger by remember(line) { mutableIntStateOf(0) }
     var playoutHandle by remember(line) { mutableStateOf(0L) }
     var playoutStartFen by remember(line) { mutableStateOf<String?>(null) }
     var playoutPositionFen by remember(line) { mutableStateOf<String?>(null) }
@@ -1410,6 +1423,8 @@ fun DrillScreen(
         userThinkingMillis = 0L
         timingEligible = restoredSnapshot == null
         completionWasSpeedy = false
+        wasLearnedAtSessionStart = progressStore.lineProgress(opening, line).isLearned
+        confettiTrigger = 0
         lastPromptAtMillis = if (timingEligible && snapshot.plyIndex < line.plies.size) {
             SystemClock.elapsedRealtime()
         } else {
@@ -1549,6 +1564,16 @@ fun DrillScreen(
                         alreadyRecorded = completionRecorded,
                         onRecorded = {
                             completionRecorded = true
+                            val isLearned = progressStore.lineProgress(opening, line).isLearned
+                            if (shouldTriggerLearningConfetti(
+                                    wasLearned = wasLearnedAtSessionStart,
+                                    isLearned = isLearned,
+                                    completedViaShowLine = completedViaShowLine,
+                                )
+                            ) {
+                                confettiTrigger += 1
+                                wasLearnedAtSessionStart = true
+                            }
                             onProgressChanged()
                         },
                     )
@@ -1716,20 +1741,7 @@ fun DrillScreen(
             if (outcome == SHARED_DRILL_LINE_COMPLETE || currentPlyCount >= line.plies.size) {
                 completedViaShowLine = true
                 completionWasSpeedy = false
-                playCompletionSound(settingsStore, soundPlayer)
-                recordDrillCompletionIfNeeded(
-                    progressStore = progressStore,
-                    drillSnapshotStore = drillSnapshotStore,
-                    opening = opening,
-                    line = line,
-                    madeMistake = madeMistake,
-                    masteryThreshold = masteryThreshold,
-                    alreadyRecorded = completionRecorded,
-                    onRecorded = {
-                        completionRecorded = true
-                        onProgressChanged()
-                    },
-                )
+                drillSnapshotStore.clear()
             } else {
                 drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
             }
@@ -1834,298 +1846,375 @@ fun DrillScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(
+        modifier = Modifier.fillMaxSize(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(onClick = onBack) {
-                Text("back")
-            }
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SourcePill(source = line.source)
-                TextButton(onClick = onOpenSettings) {
-                    Text("settings")
+                TextButton(onClick = onBack) {
+                    Text("back")
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SourcePill(source = line.source)
+                    TextButton(onClick = onOpenSettings) {
+                        Text("settings")
+                    }
                 }
             }
-        }
 
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = opening.name.toDisplayName(),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = line.name.toDisplayName(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = opening.name.toDisplayName(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = line.name.toDisplayName(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
-        BoardGrid(
-            board = board,
-            orientationSide = opening.side,
-            selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
-            hintCoordinate = if (inPlayout) null else hintCoordinate,
-            solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
-            boardArrow = boardArrow,
-            moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
-            onSquareClick = { coordinate ->
-                if (inPlayout) {
-                    val selected = playoutSelectedSquare
-                    if (selected == null) {
-                        if (canStartPlayoutMove(coordinate, board, opening.side)) {
-                            playoutSelectedSquare = coordinate
-                            playoutFeedback = null
+            BoardGrid(
+                board = board,
+                orientationSide = opening.side,
+                selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
+                hintCoordinate = if (inPlayout) null else hintCoordinate,
+                solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
+                boardArrow = boardArrow,
+                moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
+                onSquareClick = { coordinate ->
+                    if (inPlayout) {
+                        val selected = playoutSelectedSquare
+                        if (selected == null) {
+                            if (canStartPlayoutMove(coordinate, board, opening.side)) {
+                                playoutSelectedSquare = coordinate
+                                playoutFeedback = null
+                            } else {
+                                playoutFeedback = "Select one of your pieces"
+                            }
+                            return@BoardGrid
+                        }
+
+                        if (isPromotionMove(selected, coordinate, board)) {
+                            pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = true)
                         } else {
-                            playoutFeedback = "Select one of your pieces"
+                            submitPlayoutMove("$selected$coordinate")
                         }
                         return@BoardGrid
                     }
 
-                    if (isPromotionMove(selected, coordinate, board)) {
-                        pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = true)
+                    val selected = selectedSquare
+                    if (selected == null) {
+                        if (canStartDrillMove(coordinate, board, nextPly, opening.side)) {
+                            selectedSquare = coordinate
+                            feedback = null
+                        } else if (nextPly != null) {
+                            feedback = selectExpectedPieceFeedback(nextPly)
+                        }
                     } else {
-                        submitPlayoutMove("$selected$coordinate")
+                        if (isPromotionMove(selected, coordinate, board)) {
+                            pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = false)
+                        } else {
+                            submitDrillMove("$selected$coordinate")
+                        }
                     }
-                    return@BoardGrid
-                }
-
-                val selected = selectedSquare
-                if (selected == null) {
-                    if (canStartDrillMove(coordinate, board, nextPly, opening.side)) {
-                        selectedSquare = coordinate
-                        feedback = null
-                    } else if (nextPly != null) {
-                        feedback = selectExpectedPieceFeedback(nextPly)
-                    }
-                } else {
-                    if (isPromotionMove(selected, coordinate, board)) {
-                        pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = false)
-                    } else {
-                        submitDrillMove("$selected$coordinate")
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        if (!inPlayout && currentPlyCount >= line.plies.size) {
-            DrillCompletionBanner(
-                perfect = !madeMistake && !completedViaShowLine,
-                speedy = completionWasSpeedy,
-                onPlayOut = { startPlayout() },
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
-        } else {
-            Text(
-                text = if (inPlayout) {
-                    playoutFeedback ?: "playout · your move"
-                } else {
-                    feedback ?: drillProgressLabel(
-                        currentPlyCount = currentPlyCount,
-                        line = line,
-                        madeMistake = madeMistake,
-                        completedViaShowLine = completedViaShowLine,
-                    )
-                },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (feedback == null && playoutFeedback == null) {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
-                } else {
-                    MaterialTheme.colorScheme.secondary
-                },
-            )
-        }
 
-        MoveListFlow(
-            plies = visibleMoveList,
-            drillPlyCount = if (inPlayout) visiblePlies.size else null,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        if (inPlayout) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                TextButton(
-                    onClick = {
-                        SharedCoreBridge.undoSharedPlayoutSession(playoutHandle)
-                        playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, currentPositionFen)
-                        drillSnapshotStore.savePlayout(
-                            opening = opening,
+            if (!inPlayout && currentPlyCount >= line.plies.size) {
+                DrillCompletionBanner(
+                    perfect = !madeMistake && !completedViaShowLine,
+                    speedy = completionWasSpeedy,
+                    onPlayOut = { startPlayout() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Text(
+                    text = if (inPlayout) {
+                        playoutFeedback ?: "playout · your move"
+                    } else {
+                        feedback ?: drillProgressLabel(
+                            currentPlyCount = currentPlyCount,
                             line = line,
-                            positionFen = playoutPositionFen ?: currentPositionFen,
-                            startingFen = playoutStartFen ?: currentPositionFen,
-                            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
                             madeMistake = madeMistake,
-                            engineLevel = settingsStore.engineLevel,
+                            completedViaShowLine = completedViaShowLine,
                         )
-                        playoutSelectedSquare = null
-                        pendingPromotion = null
-                        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
-                        moveQualityAnnotation = null
-                        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
-                        playoutFeedback = "playout · your move"
                     },
-                    enabled = SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("undo")
-                }
-                TextButton(
-                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Exit },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("exit playout")
-                }
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (feedback == null && playoutFeedback == null) {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+                    } else {
+                        MaterialTheme.colorScheme.secondary
+                    },
+                )
             }
-            Row(
+
+            MoveListFlow(
+                plies = visibleMoveList,
+                drillPlyCount = if (inPlayout) visiblePlies.size else null,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                TextButton(
-                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.OfferDraw },
-                    enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
-                    modifier = Modifier.weight(1f),
+            )
+
+            if (inPlayout) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("offer draw")
+                    TextButton(
+                        onClick = {
+                            SharedCoreBridge.undoSharedPlayoutSession(playoutHandle)
+                            playoutPositionFen = sharedPlayoutPositionFen(playoutHandle, currentPositionFen)
+                            drillSnapshotStore.savePlayout(
+                                opening = opening,
+                                line = line,
+                                positionFen = playoutPositionFen ?: currentPositionFen,
+                                startingFen = playoutStartFen ?: currentPositionFen,
+                                movesJson = SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle).orEmpty(),
+                                madeMistake = madeMistake,
+                                engineLevel = settingsStore.engineLevel,
+                            )
+                            playoutSelectedSquare = null
+                            pendingPromotion = null
+                            playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
+                            moveQualityAnnotation = null
+                            engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
+                            playoutFeedback = "playout · your move"
+                        },
+                        enabled = SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("undo")
+                    }
+                    TextButton(
+                        onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Exit },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("exit playout")
+                    }
                 }
-                TextButton(
-                    onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Resign },
-                    enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
-                    modifier = Modifier.weight(1f),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("resign")
+                    TextButton(
+                        onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.OfferDraw },
+                        enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("offer draw")
+                    }
+                    TextButton(
+                        onClick = { pendingPlayoutConfirmation = PlayoutConfirmationAction.Resign },
+                        enabled = SharedCoreBridge.sharedPlayoutStatus(playoutHandle) != SHARED_PLAYOUT_GAME_OVER_STATUS,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("resign")
+                    }
                 }
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    TextButton(
+                        onClick = {
+                            when {
+                                !hintShown && !solutionShown -> {
+                                    hintShown = true
+                                }
+
+                                hintShown -> {
+                                    hintShown = false
+                                    solutionShown = true
+                                }
+
+                                else -> {
+                                    solutionShown = false
+                                }
+                            }
+                        },
+                        enabled = nextPly != null,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            when {
+                                solutionShown -> "hide solution"
+                                hintShown -> "show solution"
+                                else -> "show hint"
+                            },
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            SharedCoreBridge.undoSharedDrillSession(sharedDrillHandle)
+                            val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = initialPlyCount)
+                            currentPlyCount = snapshot.plyIndex.coerceAtLeast(initialPlyCount)
+                            currentPositionFen = snapshot.positionFen
+                            madeMistake = false
+                            completedViaShowLine = false
+                            completionRecorded = false
+                            completionWasSpeedy = false
+                            restartThinkingClock()
+                            drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
+                            selectedSquare = null
+                            feedback = null
+                            hintShown = false
+                            solutionShown = false
+                            expectedMoveArrow = null
+                            pendingPromotion = null
+                            showLineIsPlaying = false
+                        },
+                        enabled = currentPlyCount > initialPlyCount,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("undo")
+                    }
+                    TextButton(
+                        onClick = {
+                            val snapshot = resetSharedDrillForOpening(sharedDrillHandle, opening)
+                            currentPlyCount = snapshot.plyIndex
+                            currentPositionFen = snapshot.positionFen
+                            madeMistake = false
+                            completedViaShowLine = false
+                            completionRecorded = false
+                            userThinkingMillis = 0L
+                            timingEligible = true
+                            completionWasSpeedy = false
+                            restartThinkingClock()
+                            drillSnapshotStore.clear()
+                            selectedSquare = null
+                            feedback = null
+                            hintShown = false
+                            solutionShown = false
+                            expectedMoveArrow = null
+                            pendingPromotion = null
+                            showLineIsPlaying = false
+                        },
+                        enabled = currentPlyCount > initialPlyCount,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("reset")
+                    }
+                }
+
                 TextButton(
                     onClick = {
-                        when {
-                            !hintShown && !solutionShown -> {
-                                hintShown = true
-                            }
-
-                            hintShown -> {
-                                hintShown = false
-                                solutionShown = true
-                            }
-
-                            else -> {
-                                solutionShown = false
-                            }
+                        showLineIsPlaying = !showLineIsPlaying
+                        if (showLineIsPlaying) {
+                            timingEligible = false
+                            lastPromptAtMillis = null
+                            completionWasSpeedy = false
+                            selectedSquare = null
+                            feedback = null
+                            hintShown = false
+                            solutionShown = false
+                            expectedMoveArrow = null
+                            pendingPromotion = null
                         }
                     },
-                    enabled = nextPly != null,
-                    modifier = Modifier.weight(1f),
+                    enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        when {
-                            solutionShown -> "hide solution"
-                            hintShown -> "show solution"
-                            else -> "show hint"
-                        },
-                    )
-                }
-                TextButton(
-                    onClick = {
-                        SharedCoreBridge.undoSharedDrillSession(sharedDrillHandle)
-                        val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = initialPlyCount)
-                        currentPlyCount = snapshot.plyIndex.coerceAtLeast(initialPlyCount)
-                        currentPositionFen = snapshot.positionFen
-                        madeMistake = false
-                        completedViaShowLine = false
-                        completionRecorded = false
-                        completionWasSpeedy = false
-                        restartThinkingClock()
-                        drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
-                        selectedSquare = null
-                        feedback = null
-                        hintShown = false
-                        solutionShown = false
-                        expectedMoveArrow = null
-                        pendingPromotion = null
-                        showLineIsPlaying = false
-                    },
-                    enabled = currentPlyCount > initialPlyCount,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("undo")
-                }
-                TextButton(
-                    onClick = {
-                        val snapshot = resetSharedDrillForOpening(sharedDrillHandle, opening)
-                        currentPlyCount = snapshot.plyIndex
-                        currentPositionFen = snapshot.positionFen
-                        madeMistake = false
-                        completedViaShowLine = false
-                        completionRecorded = false
-                        userThinkingMillis = 0L
-                        timingEligible = true
-                        completionWasSpeedy = false
-                        restartThinkingClock()
-                        drillSnapshotStore.clear()
-                        selectedSquare = null
-                        feedback = null
-                        hintShown = false
-                        solutionShown = false
-                        expectedMoveArrow = null
-                        pendingPromotion = null
-                        showLineIsPlaying = false
-                    },
-                    enabled = currentPlyCount > initialPlyCount,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("reset")
+                    Text(if (showLineIsPlaying) "pause" else "show line")
                 }
             }
 
-            TextButton(
-                onClick = {
-                    showLineIsPlaying = !showLineIsPlaying
-                    if (showLineIsPlaying) {
-                        timingEligible = false
-                        lastPromptAtMillis = null
-                        completionWasSpeedy = false
-                        selectedSquare = null
-                        feedback = null
-                        hintShown = false
-                        solutionShown = false
-                        expectedMoveArrow = null
-                        pendingPromotion = null
-                    }
-                },
-                enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (showLineIsPlaying) "pause" else "show line")
-            }
+            Spacer(modifier = Modifier.weight(1f))
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        ConfettiBurst(
+            trigger = confettiTrigger,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+fun ConfettiBurst(
+    trigger: Int,
+    modifier: Modifier = Modifier,
+) {
+    val animation = remember { Animatable(1f) }
+    val particles = remember(trigger) {
+        if (trigger > 0) generateConfettiParticles(trigger) else emptyList()
+    }
+
+    LaunchedEffect(trigger) {
+        if (trigger <= 0) return@LaunchedEffect
+        animation.snapTo(0f)
+        animation.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 2_400),
+        )
+    }
+
+    Canvas(modifier = modifier) {
+        if (trigger <= 0 || animation.value >= 1f) return@Canvas
+        val elapsedSeconds = animation.value * 2.4f
+        val alpha = (1f - animation.value).coerceIn(0f, 1f)
+        particles.forEach { particle ->
+            val x = particle.originX * size.width +
+                particle.velocityX * size.width * elapsedSeconds
+            val y = particle.originY * size.height +
+                particle.velocityY * size.height * elapsedSeconds +
+                0.5f * 0.38f * size.height * elapsedSeconds * elapsedSeconds
+            val particleSize = particle.sizeFraction * size.width
+            drawRect(
+                color = particle.color.copy(alpha = alpha),
+                topLeft = Offset(x - particleSize / 2f, y - particleSize / 2f),
+                size = Size(particleSize, particleSize),
+            )
+        }
+    }
+}
+
+fun generateConfettiParticles(
+    seed: Int,
+    count: Int = 90,
+): List<ConfettiParticle> {
+    val random = Random(seed)
+    val colors = listOf(
+        Color(0xFFE84D4D),
+        Color(0xFFF29D38),
+        Color(0xFFF2D14B),
+        Color(0xFF4AAE73),
+        Color(0xFF3D82D7),
+        Color(0xFF8B62C7),
+        Color(0xFFD75C9A),
+        Color(0xFF45B8C4),
+    )
+    return List(count.coerceAtLeast(0)) {
+        val angle = random.nextDouble() * (2.0 * PI)
+        val speed = 0.16f + random.nextFloat() * 0.28f
+        ConfettiParticle(
+            originX = 0.46f + random.nextFloat() * 0.08f,
+            originY = 0.34f + random.nextFloat() * 0.08f,
+            velocityX = cos(angle).toFloat() * speed,
+            velocityY = sin(angle).toFloat() * speed,
+            sizeFraction = 0.006f + random.nextFloat() * 0.006f,
+            color = colors[random.nextInt(colors.size)],
+        )
     }
 }
 
@@ -3072,6 +3161,13 @@ fun isSpeedyDrillCompletion(
         !completedViaShowLine &&
         linePlyCount > 0 &&
         userThinkingMillis.toDouble() / linePlyCount < 1_000.0
+
+fun shouldTriggerLearningConfetti(
+    wasLearned: Boolean,
+    isLearned: Boolean,
+    completedViaShowLine: Boolean,
+): Boolean =
+    !wasLearned && isLearned && !completedViaShowLine
 
 fun sameMoveSquares(playedUci: String, expectedUci: String): Boolean =
     playedUci.length >= 4 &&

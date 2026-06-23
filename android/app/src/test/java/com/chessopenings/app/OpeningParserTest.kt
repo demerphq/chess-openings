@@ -91,6 +91,16 @@ class OpeningParserTest {
     }
 
     @Test
+    fun triggersConfettiOnlyOnUserDrivenLearnedTransition() {
+        assertEquals(true, shouldTriggerLearningConfetti(false, true, completedViaShowLine = false))
+        assertEquals(false, shouldTriggerLearningConfetti(true, true, completedViaShowLine = false))
+        assertEquals(false, shouldTriggerLearningConfetti(false, false, completedViaShowLine = false))
+        assertEquals(false, shouldTriggerLearningConfetti(false, true, completedViaShowLine = true))
+        assertEquals(90, generateConfettiParticles(seed = 7).size)
+        assertEquals(generateConfettiParticles(seed = 7), generateConfettiParticles(seed = 7))
+    }
+
+    @Test
     fun formatsDisplayLabels() {
         val line = LineSummary(
             name = "Bc5",

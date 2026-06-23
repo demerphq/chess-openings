@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -669,6 +670,30 @@ fun SettingsScreen(
     val engineLevel = remember(settingsRevision) { settingsStore.engineLevel }
     val moveAnalysisDepth = remember(settingsRevision) { settingsStore.moveAnalysisDepth }
     val moveQualityBadgeMs = remember(settingsRevision) { settingsStore.moveQualityBadgeMs }
+    var showResetConfirmation by remember { mutableStateOf(false) }
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text("reset line progress?") },
+            text = { Text("This clears mastery streaks and completion counts for every line.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        progressStore.clearAll()
+                        showResetConfirmation = false
+                        onProgressReset()
+                    },
+                ) {
+                    Text("reset")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text("cancel")
+                }
+            },
+        )
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -819,10 +844,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     TextButton(
-                        onClick = {
-                            progressStore.clearAll()
-                            onProgressReset()
-                        },
+                        onClick = { showResetConfirmation = true },
                     ) {
                         Text("reset")
                     }

@@ -736,6 +736,11 @@ fun ChessOpeningsHome(
                 drillSnapshotStore.clear()
                 drillSelection = null
             },
+            onOpenSettings = {
+                drillSelection = null
+                detailOpening = null
+                selectedTab = AppTab.Settings
+            },
         )
         return
     }
@@ -1320,6 +1325,7 @@ fun DrillScreen(
     soundPlayer: AndroidSoundPlayer,
     onProgressChanged: () -> Unit,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
     val drillMode = remember(settingsRevision) { settingsStore.drillMode }
@@ -1766,7 +1772,15 @@ fun DrillScreen(
             TextButton(onClick = onBack) {
                 Text("back")
             }
-            SourcePill(source = line.source)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SourcePill(source = line.source)
+                TextButton(onClick = onOpenSettings) {
+                    Text("settings")
+                }
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {

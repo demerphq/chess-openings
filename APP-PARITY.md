@@ -47,9 +47,6 @@ expected to differ by platform.
   - Use a scrollable flow layout for longer move lists.
   - Visually distinguish the original drill line from the engine playout
     continuation.
-- In-drill settings access:
-  - Apple exposes settings from the drill toolbar. Android currently exposes
-    settings as a main tab, but not as an in-drill action.
 
 ## Missing From iPhone
 

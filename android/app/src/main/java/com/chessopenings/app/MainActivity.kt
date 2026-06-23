@@ -162,6 +162,9 @@ fun ChessOpeningsApp() {
         check(SharedCoreBridge.isChessKitAvailable()) {
             "Shared ChessOpeningsCore bridge is unavailable"
         }
+        check(SharedCoreBridge.isSharedDrillSessionAvailable()) {
+            "Shared DrillSession bridge is unavailable"
+        }
     }
     val openings = remember {
         context.assets.open("openings.json")

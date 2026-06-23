@@ -215,7 +215,8 @@ class OpeningParserTest {
         assertEquals(false, sameMoveSquares("e2", "e2e4"))
 
         val next = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
-        assertEquals("Try again · expected e4", expectedMoveFeedback(next))
+        assertEquals("Try again", expectedMoveFeedback(next))
+        assertEquals("Book says e4 · try again", expectedMoveFeedback(next, "showAndRetry"))
         assertEquals("Line complete", expectedMoveFeedback(null))
     }
 

@@ -163,11 +163,56 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
 }
 
 class AndroidSettingsStore(private val preferences: SharedPreferences) {
+    var drillMode: String
+        get() = preferences.getString("drillMode", DRILL_MODE_STRICT)
+            ?.takeIf { it == DRILL_MODE_STRICT || it == DRILL_MODE_SHOW_AND_RETRY }
+            ?: DRILL_MODE_STRICT
+        set(value) {
+            preferences.edit()
+                .putString(
+                    "drillMode",
+                    if (value == DRILL_MODE_SHOW_AND_RETRY) DRILL_MODE_SHOW_AND_RETRY else DRILL_MODE_STRICT,
+                )
+                .apply()
+        }
+
     var masteryThreshold: Int
         get() = preferences.getInt("masteryThreshold", MASTERY_THRESHOLD)
         set(value) {
             preferences.edit()
                 .putInt("masteryThreshold", value.coerceIn(1, 10))
+                .apply()
+        }
+
+    var soundsEnabled: Boolean
+        get() = preferences.getBoolean("soundsEnabled", true)
+        set(value) {
+            preferences.edit()
+                .putBoolean("soundsEnabled", value)
+                .apply()
+        }
+
+    var engineLevel: Int
+        get() = preferences.getInt("engineLevel", DEFAULT_ENGINE_LEVEL)
+        set(value) {
+            preferences.edit()
+                .putInt("engineLevel", value.coerceIn(0, 20))
+                .apply()
+        }
+
+    var moveAnalysisDepth: Int
+        get() = preferences.getInt("moveAnalysisDepth", DEFAULT_MOVE_ANALYSIS_DEPTH)
+        set(value) {
+            preferences.edit()
+                .putInt("moveAnalysisDepth", value.coerceIn(6, 20))
+                .apply()
+        }
+
+    var moveQualityBadgeMs: Int
+        get() = preferences.getInt("moveQualityBadgeMs", DEFAULT_MOVE_QUALITY_BADGE_MS)
+        set(value) {
+            preferences.edit()
+                .putInt("moveQualityBadgeMs", value.coerceIn(500, 5000))
                 .apply()
         }
 }
@@ -589,7 +634,12 @@ fun SettingsScreen(
     onProgressReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val drillMode = remember(settingsRevision) { settingsStore.drillMode }
     val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
+    val soundsEnabled = remember(settingsRevision) { settingsStore.soundsEnabled }
+    val engineLevel = remember(settingsRevision) { settingsStore.engineLevel }
+    val moveAnalysisDepth = remember(settingsRevision) { settingsStore.moveAnalysisDepth }
+    val moveQualityBadgeMs = remember(settingsRevision) { settingsStore.moveQualityBadgeMs }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -598,6 +648,33 @@ fun SettingsScreen(
     ) {
         item {
             CatalogueHeader(tab = AppTab.Settings, openingCount = null)
+        }
+        item {
+            SectionHeader("drill mode")
+        }
+        item {
+            SettingOptionRow(
+                label = "mistakes",
+                value = if (drillMode == DRILL_MODE_SHOW_AND_RETRY) "show-and-retry" else "strict",
+                actions = listOf(
+                    SettingAction(
+                        label = "strict",
+                        enabled = drillMode != DRILL_MODE_STRICT,
+                        onClick = {
+                            settingsStore.drillMode = DRILL_MODE_STRICT
+                            onSettingsChanged()
+                        },
+                    ),
+                    SettingAction(
+                        label = "retry",
+                        enabled = drillMode != DRILL_MODE_SHOW_AND_RETRY,
+                        onClick = {
+                            settingsStore.drillMode = DRILL_MODE_SHOW_AND_RETRY
+                            onSettingsChanged()
+                        },
+                    ),
+                ),
+            )
         }
         item {
             SectionHeader("mastery")
@@ -614,6 +691,80 @@ fun SettingsScreen(
                 },
                 onIncrement = {
                     settingsStore.masteryThreshold = masteryThreshold + 1
+                    onSettingsChanged()
+                },
+            )
+        }
+        item {
+            SectionHeader("sound")
+        }
+        item {
+            SettingOptionRow(
+                label = "move + feedback sounds",
+                value = if (soundsEnabled) "on" else "off",
+                actions = listOf(
+                    SettingAction(
+                        label = if (soundsEnabled) "turn off" else "turn on",
+                        enabled = true,
+                        onClick = {
+                            settingsStore.soundsEnabled = !soundsEnabled
+                            onSettingsChanged()
+                        },
+                    ),
+                ),
+            )
+        }
+        item {
+            SectionHeader("engine")
+        }
+        item {
+            SettingStepperRow(
+                label = "difficulty",
+                value = engineLevel,
+                canDecrement = engineLevel > 0,
+                canIncrement = engineLevel < 20,
+                onDecrement = {
+                    settingsStore.engineLevel = engineLevel - 1
+                    onSettingsChanged()
+                },
+                onIncrement = {
+                    settingsStore.engineLevel = engineLevel + 1
+                    onSettingsChanged()
+                },
+            )
+        }
+        item {
+            SectionHeader("move quality")
+        }
+        item {
+            SettingStepperRow(
+                label = "analysis depth",
+                value = moveAnalysisDepth,
+                canDecrement = moveAnalysisDepth > 6,
+                canIncrement = moveAnalysisDepth < 20,
+                onDecrement = {
+                    settingsStore.moveAnalysisDepth = moveAnalysisDepth - 1
+                    onSettingsChanged()
+                },
+                onIncrement = {
+                    settingsStore.moveAnalysisDepth = moveAnalysisDepth + 1
+                    onSettingsChanged()
+                },
+            )
+        }
+        item {
+            SettingStepperRow(
+                label = "badge duration",
+                value = moveQualityBadgeMs,
+                valueSuffix = "ms",
+                canDecrement = moveQualityBadgeMs > 500,
+                canIncrement = moveQualityBadgeMs < 5000,
+                onDecrement = {
+                    settingsStore.moveQualityBadgeMs = moveQualityBadgeMs - 100
+                    onSettingsChanged()
+                },
+                onIncrement = {
+                    settingsStore.moveQualityBadgeMs = moveQualityBadgeMs + 100
                     onSettingsChanged()
                 },
             )
@@ -652,10 +803,60 @@ fun SettingsScreen(
     }
 }
 
+data class SettingAction(
+    val label: String,
+    val enabled: Boolean,
+    val onClick: () -> Unit,
+)
+
+@Composable
+fun SettingOptionRow(
+    label: String,
+    value: String,
+    actions: List<SettingAction>,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                actions.forEach { action ->
+                    TextButton(onClick = action.onClick, enabled = action.enabled) {
+                        Text(action.label)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun SettingStepperRow(
     label: String,
     value: Int,
+    valueSuffix: String = "",
     canDecrement: Boolean,
     canIncrement: Boolean,
     onDecrement: () -> Unit,
@@ -679,7 +880,7 @@ fun SettingStepperRow(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = value.toString(),
+                    text = if (valueSuffix.isBlank()) value.toString() else "$value $valueSuffix",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 )
@@ -831,6 +1032,7 @@ fun DrillScreen(
     onBack: () -> Unit,
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
+    val drillMode = remember(settingsRevision) { settingsStore.drillMode }
     val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
     var currentPlyCount by remember(line) { mutableIntStateOf(0) }
     var currentPositionFen by remember(line) { mutableStateOf(STARTING_POSITION_FEN) }
@@ -1004,9 +1206,9 @@ fun DrillScreen(
                         SHARED_DRILL_INCORRECT -> {
                             madeMistake = true
                             drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake = true)
-                            selectedSquare = coordinate
-                            feedback = expectedMoveFeedback(nextPly)
-                            solutionShown = true
+                            selectedSquare = null
+                            feedback = expectedMoveFeedback(nextPly, drillMode)
+                            solutionShown = drillMode == DRILL_MODE_SHOW_AND_RETRY
                             hintShown = false
                             showLineIsPlaying = false
                         }
@@ -1689,8 +1891,17 @@ fun sameMoveSquares(playedUci: String, expectedUci: String): Boolean =
         expectedUci.length >= 4 &&
         playedUci.take(4) == expectedUci.take(4)
 
-fun expectedMoveFeedback(nextPly: PlySummary?): String =
-    nextPly?.let { "Try again · expected ${it.san}" } ?: "Line complete"
+fun expectedMoveFeedback(
+    nextPly: PlySummary?,
+    drillMode: String = DRILL_MODE_STRICT,
+): String =
+    nextPly?.let {
+        if (drillMode == DRILL_MODE_SHOW_AND_RETRY) {
+            "Book says ${it.san} · try again"
+        } else {
+            "Try again"
+        }
+    } ?: "Line complete"
 
 fun selectExpectedPieceFeedback(nextPly: PlySummary): String =
     "Select the piece for ${nextPly.san}"
@@ -1958,5 +2169,10 @@ private const val SHARED_DRILL_INCORRECT = 2
 private const val SHARED_DRILL_LINE_COMPLETE = 5
 private const val SHARED_DRILL_USER_SIDE_WHITE = 0
 private const val SHARED_DRILL_USER_SIDE_BLACK = 1
+private const val DRILL_MODE_STRICT = "strict"
+private const val DRILL_MODE_SHOW_AND_RETRY = "showAndRetry"
 private const val MASTERY_THRESHOLD = 3
+private const val DEFAULT_ENGINE_LEVEL = 10
+private const val DEFAULT_MOVE_ANALYSIS_DEPTH = 10
+private const val DEFAULT_MOVE_QUALITY_BADGE_MS = 1750
 private const val STARTING_POSITION_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

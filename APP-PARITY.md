@@ -16,19 +16,15 @@ expected to differ by platform.
   parity is less important than matching workflows, labels, chess behavior, and
   information architecture.
 - Persistence will not be byte-for-byte identical. Apple uses SwiftData models;
-  Android currently uses app-local preferences for settings, progress, and active
-  drill/playout snapshots.
+  Android currently uses app-local preferences for settings, progress, custom
+  openings, and active drill/playout snapshots.
 - Platform-specific packaging and engine asset handling will differ. Stockfish,
   NNUE files, app icons, permissions, and install flows are expected to use each
   platform's conventions.
 
 ## Missing From Android
 
-- Custom library authoring:
-  - Create a new custom opening.
-  - Delete custom openings.
-  - Add a custom SAN line to a custom opening.
-  - Validate custom SAN input and show parse/illegal-move errors.
+- None currently tracked.
 
 ## Missing From iPhone
 

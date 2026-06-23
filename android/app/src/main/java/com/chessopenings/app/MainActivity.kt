@@ -1005,6 +1005,25 @@ fun ChessOpeningsHome(
                         onCustomOpeningsChanged()
                         detailOpening = null
                     },
+                    onAddLine = { lineName, sanText ->
+                        val validation = parseSANLineValidation(
+                            SharedCoreBridge.validateSanLineJson(sanText),
+                        )
+                        val plies = validation.plies
+                            ?: return@OpeningDetailScreen validation.errorMessage
+                        val updated = customOpeningStore.addLine(
+                            openingId = opening.id,
+                            line = LineSummary(
+                                name = lineName.trim(),
+                                source = "masters",
+                                tags = emptyList(),
+                                plies = plies,
+                            ),
+                        ) ?: return@OpeningDetailScreen "opening no longer exists"
+                        detailOpening = updated
+                        onCustomOpeningsChanged()
+                        null
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1533,10 +1552,12 @@ fun OpeningDetailScreen(
     onBack: () -> Unit,
     onStartDrill: (LineSummary) -> Unit,
     onDeleteOpening: () -> Unit,
+    onAddLine: (lineName: String, sanText: String) -> String?,
     modifier: Modifier = Modifier,
 ) {
     val masteryThreshold = remember(settingsRevision) { settingsStore.masteryThreshold }
     var showDeleteConfirmation by remember(opening.id) { mutableStateOf(false) }
+    var showNewLine by remember(opening.id) { mutableStateOf(false) }
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
@@ -1550,6 +1571,16 @@ fun OpeningDetailScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
                     Text("cancel")
+                }
+            },
+        )
+    }
+    if (showNewLine) {
+        NewLineDialog(
+            onDismiss = { showNewLine = false },
+            onSave = { lineName, sanText ->
+                onAddLine(lineName, sanText).also { error ->
+                    if (error == null) showNewLine = false
                 }
             },
         )
@@ -1573,6 +1604,9 @@ fun OpeningDetailScreen(
                     if (!opening.isSeed) {
                         TextButton(onClick = { showDeleteConfirmation = true }) {
                             Text("delete")
+                        }
+                        TextButton(onClick = { showNewLine = true }) {
+                            Text("add line")
                         }
                     }
                     Button(
@@ -1640,6 +1674,69 @@ fun OpeningDetailScreen(
             onStartDrill = onStartDrill,
         )
     }
+}
+
+@Composable
+fun NewLineDialog(
+    onDismiss: () -> Unit,
+    onSave: (lineName: String, sanText: String) -> String?,
+) {
+    var lineName by remember { mutableStateOf("") }
+    var sanText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val canSave = lineName.trim().isNotEmpty() && sanText.trim().isNotEmpty()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("new line") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = lineName,
+                    onValueChange = {
+                        lineName = it
+                        errorMessage = null
+                    },
+                    label = { Text("line name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = sanText,
+                    onValueChange = {
+                        sanText = it
+                        errorMessage = null
+                    },
+                    label = { Text("moves (SAN)") },
+                    minLines = 4,
+                    maxLines = 7,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    errorMessage = onSave(lineName.trim(), sanText.trim())
+                },
+                enabled = canSave,
+            ) {
+                Text("save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("cancel")
+            }
+        },
+    )
 }
 
 @Composable

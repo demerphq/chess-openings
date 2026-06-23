@@ -18,6 +18,7 @@ object SharedCoreBridge {
     external fun sharedDrillStatus(handle: Long): Int
     external fun sharedDrillPositionFen(handle: Long): String?
     external fun legalTargetsJson(fen: String, source: String): String?
+    external fun validateSanLineJson(sanText: String): String?
     external fun undoSharedDrillSession(handle: Long): Int
     external fun resetSharedDrillSession(handle: Long): Int
     external fun restoreSharedDrillSession(handle: Long, plyIndex: Int, userSide: Int): Int

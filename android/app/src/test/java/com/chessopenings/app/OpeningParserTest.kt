@@ -63,6 +63,52 @@ class OpeningParserTest {
     }
 
     @Test
+    fun roundTripsCustomOpeningsAndLines() {
+        val opening = OpeningSummary(
+            name = "My Italian",
+            eco = "C50",
+            side = "white",
+            description = null,
+            isSeed = false,
+            lines = listOf(
+                LineSummary(
+                    name = "main line",
+                    source = "masters",
+                    tags = emptyList(),
+                    plies = listOf(
+                        PlySummary("e4", "e2e4", null, emptyList()),
+                        PlySummary("e5", "e7e5", null, emptyList()),
+                    ),
+                ),
+            ),
+            id = "custom-1",
+        )
+
+        assertEquals(listOf(opening), decodeCustomOpenings(encodeCustomOpenings(listOf(opening))))
+        assertEquals(emptyList<OpeningSummary>(), decodeCustomOpenings("not json"))
+    }
+
+    @Test
+    fun parsesSharedSanValidationResults() {
+        val valid = parseSANLineValidation(
+            """{"ok":true,"plies":[{"san":"e4","uci":"e2e4"},{"san":"e5","uci":"e7e5"}]}""",
+        )
+        val invalid = parseSANLineValidation(
+            """{"ok":false,"error":"illegal","ply":2,"san":"Bh6"}""",
+        )
+
+        assertEquals(listOf("e4", "e5"), valid.plies?.map { it.san })
+        assertEquals(listOf("e2e4", "e7e5"), valid.plies?.map { it.uci })
+        assertEquals(null, valid.errorMessage)
+        assertEquals(null, invalid.plies)
+        assertEquals("illegal move at ply 3: Bh6", invalid.errorMessage)
+        assertEquals(
+            "no moves entered",
+            parseSANLineValidation("""{"ok":false,"error":"empty"}""").errorMessage,
+        )
+    }
+
+    @Test
     fun formatsSanLineWithMoveNumbersAndEllipsis() {
         val plies = listOf("e4", "e5", "Nf3", "Nc6", "Bb5")
             .map { PlySummary(san = it, uci = "", annotation = null, alternativeSans = emptyList()) }

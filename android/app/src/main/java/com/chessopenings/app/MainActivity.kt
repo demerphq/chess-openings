@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -186,6 +187,7 @@ data class OpeningSummary(
     val description: String?,
     val isSeed: Boolean,
     val lines: List<LineSummary>,
+    val id: String = "",
 )
 
 data class LineSummary(
@@ -502,6 +504,157 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
     }
 }
 
+class AndroidCustomOpeningStore(private val preferences: SharedPreferences) {
+    fun openings(): List<OpeningSummary> =
+        decodeCustomOpenings(preferences.getString(CUSTOM_OPENINGS_KEY, null))
+
+    fun create(name: String, eco: String, side: String): OpeningSummary {
+        val opening = OpeningSummary(
+            name = name.trim(),
+            eco = eco.trim().uppercase(),
+            side = side,
+            description = null,
+            isSeed = false,
+            lines = emptyList(),
+            id = UUID.randomUUID().toString(),
+        )
+        save(openings() + opening)
+        return opening
+    }
+
+    fun delete(openingId: String) {
+        save(openings().filterNot { it.id == openingId })
+    }
+
+    fun addLine(openingId: String, line: LineSummary): OpeningSummary? {
+        var updated: OpeningSummary? = null
+        val openings = openings().map { opening ->
+            if (opening.id == openingId) {
+                opening.copy(lines = opening.lines + line).also { updated = it }
+            } else {
+                opening
+            }
+        }
+        save(openings)
+        return updated
+    }
+
+    private fun save(openings: List<OpeningSummary>) {
+        preferences.edit()
+            .putString(CUSTOM_OPENINGS_KEY, encodeCustomOpenings(openings))
+            .apply()
+    }
+}
+
+data class SANLineValidationResult(
+    val plies: List<PlySummary>?,
+    val errorMessage: String?,
+)
+
+fun parseSANLineValidation(jsonText: String?): SANLineValidationResult {
+    if (jsonText.isNullOrBlank()) {
+        return SANLineValidationResult(null, "could not validate moves")
+    }
+    return runCatching {
+        val result = JSONObject(jsonText)
+        if (!result.optBoolean("ok")) {
+            val message = when (result.optString("error")) {
+                "empty" -> "no moves entered"
+                "illegal" -> {
+                    val ply = result.optInt("ply", -1)
+                    val san = result.optString("san")
+                    "illegal move at ply ${ply + 1}: $san"
+                }
+                else -> "could not validate moves"
+            }
+            SANLineValidationResult(null, message)
+        } else {
+            val pliesJson = result.getJSONArray("plies")
+            val plies = List(pliesJson.length()) { index ->
+                val ply = pliesJson.getJSONObject(index)
+                PlySummary(
+                    san = ply.getString("san"),
+                    uci = ply.getString("uci"),
+                    annotation = null,
+                    alternativeSans = emptyList(),
+                )
+            }
+            SANLineValidationResult(plies, null)
+        }
+    }.getOrElse {
+        SANLineValidationResult(null, "could not validate moves")
+    }
+}
+
+fun encodeCustomOpenings(openings: List<OpeningSummary>): String =
+    JSONArray(
+        openings.map { opening ->
+            JSONObject()
+                .put("id", opening.id)
+                .put("name", opening.name)
+                .put("eco", opening.eco)
+                .put("side", opening.side)
+                .put(
+                    "lines",
+                    JSONArray(
+                        opening.lines.map { line ->
+                            JSONObject()
+                                .put("name", line.name)
+                                .put("source", line.source)
+                                .put("tags", JSONArray(line.tags))
+                                .put(
+                                    "plies",
+                                    JSONArray(
+                                        line.plies.map { ply ->
+                                            JSONObject()
+                                                .put("san", ply.san)
+                                                .put("uci", ply.uci)
+                                        },
+                                    ),
+                                )
+                        },
+                    ),
+                )
+        },
+    ).toString()
+
+fun decodeCustomOpenings(jsonText: String?): List<OpeningSummary> {
+    if (jsonText.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val openings = JSONArray(jsonText)
+        List(openings.length()) { openingIndex ->
+            val opening = openings.getJSONObject(openingIndex)
+            val lines = opening.optJSONArray("lines") ?: JSONArray()
+            OpeningSummary(
+                name = opening.getString("name"),
+                eco = opening.optString("eco").uppercase(),
+                side = opening.optString("side").takeIf { it == "black" } ?: "white",
+                description = null,
+                isSeed = false,
+                lines = List(lines.length()) { lineIndex ->
+                    val line = lines.getJSONObject(lineIndex)
+                    val plies = line.getJSONArray("plies")
+                    LineSummary(
+                        name = line.getString("name"),
+                        source = line.optString("source", "masters"),
+                        tags = line.optStringList("tags"),
+                        plies = List(plies.length()) { plyIndex ->
+                            val ply = plies.getJSONObject(plyIndex)
+                            PlySummary(
+                                san = ply.getString("san"),
+                                uci = ply.getString("uci"),
+                                annotation = null,
+                                alternativeSans = emptyList(),
+                            )
+                        },
+                    )
+                },
+                id = opening.getString("id"),
+            )
+        }
+    }.getOrElse { emptyList() }
+}
+
 fun recordCompletionProgress(
     current: LineProgressSummary,
     madeMistake: Boolean,
@@ -647,6 +800,7 @@ fun parseOpeningSummaries(jsonText: String): List<OpeningSummary> {
                     },
                 )
             },
+            id = "seed-$openingIndex",
         )
     }
 }
@@ -4037,6 +4191,7 @@ private const val DRILL_MODE_STRICT = "strict"
 private const val DRILL_MODE_SHOW_AND_RETRY = "showAndRetry"
 private const val MASTERY_THRESHOLD = 3
 private const val MISTAKE_LOG_LIMIT = 20
+private const val CUSTOM_OPENINGS_KEY = "custom.openings.json"
 private const val DEFAULT_ENGINE_LEVEL = 10
 private const val DEFAULT_MOVE_ANALYSIS_DEPTH = 10
 private const val DEFAULT_MOVE_QUALITY_BADGE_MS = 1750

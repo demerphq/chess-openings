@@ -581,12 +581,20 @@ fun DrillScreen(
             ) {
                 Text(if (solutionShown) "hide" else "solution")
             }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+            TextButton(
+                onClick = {
+                    currentPlyCount = undoDrillPlyCount(currentPlyCount, initialPlyCount, opening)
+                    selectedSquare = null
+                    feedback = null
+                    hintShown = false
+                    solutionShown = false
+                    showLineIsPlaying = false
+                },
+                enabled = currentPlyCount > initialPlyCount,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("undo")
+            }
             TextButton(
                 onClick = {
                     currentPlyCount = initialPlyCount
@@ -600,34 +608,6 @@ fun DrillScreen(
                 modifier = Modifier.weight(1f),
             ) {
                 Text("reset")
-            }
-            TextButton(
-                onClick = {
-                    currentPlyCount = (currentPlyCount - 1).coerceAtLeast(initialPlyCount)
-                    selectedSquare = null
-                    feedback = null
-                    hintShown = false
-                    solutionShown = false
-                    showLineIsPlaying = false
-                },
-                enabled = currentPlyCount > initialPlyCount,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("previous")
-            }
-            Button(
-                onClick = {
-                    currentPlyCount = (currentPlyCount + 1).coerceAtMost(line.plies.size)
-                    selectedSquare = null
-                    feedback = null
-                    hintShown = false
-                    solutionShown = false
-                    showLineIsPlaying = false
-                },
-                enabled = currentPlyCount < line.plies.size,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("next")
             }
         }
 
@@ -1171,6 +1151,19 @@ fun showLineNextPlyCount(
     line: LineSummary,
 ): Int =
     (currentPlyCount + 1).coerceAtMost(line.plies.size)
+
+fun undoDrillPlyCount(
+    currentPlyCount: Int,
+    initialPlyCount: Int,
+    opening: OpeningSummary,
+): Int {
+    val playableParity = if (opening.side.isBlackSide()) 1 else 0
+    var next = (currentPlyCount - 1).coerceAtLeast(initialPlyCount)
+    while (next > initialPlyCount && next % 2 != playableParity) {
+        next--
+    }
+    return next.coerceAtLeast(initialPlyCount)
+}
 
 fun canStartDrillMove(
     coordinate: String,

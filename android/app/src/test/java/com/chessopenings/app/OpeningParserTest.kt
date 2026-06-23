@@ -71,6 +71,17 @@ class OpeningParserTest {
     }
 
     @Test
+    fun formatsMoveListTokensForWrappedLayout() {
+        val e4 = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
+        val e5 = PlySummary(san = "e5", uci = "e7e5", annotation = null, alternativeSans = emptyList())
+        val nf3 = PlySummary(san = "Nf3", uci = "g1f3", annotation = "!", alternativeSans = emptyList())
+
+        assertEquals("1. e4", moveListToken(0, e4))
+        assertEquals("e5", moveListToken(1, e5))
+        assertEquals("2. Nf3 !", moveListToken(2, nf3))
+    }
+
+    @Test
     fun formatsDisplayLabels() {
         val line = LineSummary(
             name = "Bc5",

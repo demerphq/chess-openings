@@ -43,10 +43,6 @@ expected to differ by platform.
   - Show the speedy run badge.
   - Fire confetti when a line first becomes learned.
   - Provide the inline "play it out" completion action.
-- Move list presentation:
-  - Use a scrollable flow layout for longer move lists.
-  - Visually distinguish the original drill line from the engine playout
-    continuation.
 
 ## Missing From iPhone
 

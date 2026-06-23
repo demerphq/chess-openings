@@ -21,12 +21,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
@@ -35,8 +38,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -67,6 +72,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1868,12 +1874,10 @@ fun DrillScreen(
             },
         )
 
-        Text(
-            text = formatSanLine(visibleMoveList, maxPlies = 24),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
+        MoveListFlow(
+            plies = visibleMoveList,
+            drillPlyCount = if (inPlayout) visiblePlies.size else null,
+            modifier = Modifier.fillMaxWidth(),
         )
 
         if (inPlayout) {
@@ -2069,6 +2073,48 @@ fun DrillScreen(
         }
 
         Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MoveListFlow(
+    plies: List<PlySummary>,
+    drillPlyCount: Int?,
+    modifier: Modifier = Modifier,
+) {
+    if (plies.isEmpty()) {
+        Text(
+            text = "No moves",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            modifier = modifier,
+        )
+        return
+    }
+
+    Box(
+        modifier = modifier
+            .heightIn(max = 92.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            plies.forEachIndexed { index, ply ->
+                val isDrillPrefix = drillPlyCount != null && index < drillPlyCount
+                Text(
+                    text = moveListToken(index, ply),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = if (isDrillPrefix) 0.52f else 0.82f,
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -3290,6 +3336,9 @@ fun formatSanLine(plies: List<PlySummary>, maxPlies: Int): String {
     }.joinToString(" ")
     return if (plies.size > maxPlies) "$moves ..." else moves
 }
+
+fun moveListToken(index: Int, ply: PlySummary): String =
+    if (index % 2 == 0) "${index / 2 + 1}. ${ply.displaySan()}" else ply.displaySan()
 
 fun PlySummary.displaySan(): String =
     if (annotation.isNullOrBlank()) san else "$san $annotation"

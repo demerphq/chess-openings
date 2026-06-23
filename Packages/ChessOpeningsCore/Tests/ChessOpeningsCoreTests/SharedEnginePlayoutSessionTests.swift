@@ -1,4 +1,5 @@
 import ChessKit
+import Foundation
 import Testing
 @testable import ChessOpeningsCore
 
@@ -186,6 +187,37 @@ import Testing
     #expect(decision == nil)
 }
 
+@Test func sharedPlayoutAcceptsPromotionUCI() async throws {
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: "8/P7/8/8/8/8/8/k6K w - - 0 1",
+        userSide: .white,
+        engine: FakeSharedEngineService()
+    )
+
+    let restored = session.restore(
+        moves: [
+            SharedPlayoutStoredMove(uci: "a7a8q", byUser: true),
+        ]
+    )
+
+    #expect(restored)
+    #expect(session.moves.map(\.uci) == ["a7a8q"])
+}
+
+@Test func sharedUCIProcessEngineReturnsBestMoveAndEvaluation() async throws {
+    let script = try makeFakeUCIEngineScript()
+    let engine = SharedUCIProcessEngine(executablePath: script.path)
+
+    let decision = await engine.bestMove(
+        at: Position.standard,
+        skill: 7,
+        budget: .depth(3)
+    )
+
+    #expect(decision?.move.uci == "e7e5")
+    #expect(decision?.evaluation == .cp(34))
+}
+
 private final class FakeSharedEngineService: SharedEngineServicing {
     var bestMoves: [String]
     var evaluations: [SharedEngineEvaluation]
@@ -223,4 +255,38 @@ private final class FakeSharedEngineService: SharedEngineServicing {
         evaluateCalls += 1
         return evaluations.isEmpty ? .cp(0) : evaluations.removeFirst()
     }
+}
+
+private func makeFakeUCIEngineScript() throws -> URL {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ChessOpeningsCoreTests", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    let script = directory.appendingPathComponent(UUID().uuidString)
+    let body = """
+    #!/usr/bin/env bash
+    while IFS= read -r line; do
+      case "$line" in
+        uci)
+          echo "id name Fake UCI"
+          echo "uciok"
+          ;;
+        isready)
+          echo "readyok"
+          ;;
+        go*)
+          echo "info depth 1 score cp 34"
+          echo "bestmove e7e5"
+          ;;
+      esac
+    done
+    """
+    try body.write(to: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: script.path
+    )
+    return script
 }

@@ -320,15 +320,11 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     }
 
     private func parseUCI(_ uci: String, in position: Position) -> Move? {
-        guard uci.count == 4 else { return nil }
-        let from = String(uci.prefix(2))
-        let to = String(uci.dropFirst(2).prefix(2))
-        guard Self.isAlgebraicSquare(from),
-              Self.isAlgebraicSquare(to),
-              let piece = position.piece(at: Square(from)) else {
-            return nil
-        }
-        return Move(result: .move, piece: piece, start: Square(from), end: Square(to))
+        EngineLANParser.parse(
+            move: uci,
+            for: position.sideToMove,
+            in: position
+        )
     }
 
     private static func userIsOnMove(userSide: OpeningSide, position: Position) -> Bool {
@@ -338,13 +334,6 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         default:
             return false
         }
-    }
-
-    private static func isAlgebraicSquare(_ value: String) -> Bool {
-        guard value.count == 2 else { return false }
-        let file = value.first!
-        let rank = value.last!
-        return ("a"..."h").contains(file) && ("1"..."8").contains(rank)
     }
 
     private static func reason(forBoardState state: Board.State) -> SharedGameOverReason? {

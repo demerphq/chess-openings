@@ -24,10 +24,22 @@ android {
     }
 
     sourceSets["main"].assets.srcDir(generatedAssetsDir)
+
+    androidResources {
+        noCompress += "nnue"
+    }
 }
 
 val syncSharedSeedAssets = tasks.register<Sync>("syncSharedSeedAssets") {
     from(rootProject.file("../Chess Openings/Resources/openings.json"))
+    from(rootProject.file("../Chess Openings/Resources/Stockfish")) {
+        include("*.nnue")
+        into("stockfish")
+    }
+    from(rootProject.file("stockfish")) {
+        include("*/stockfish")
+        into("stockfish")
+    }
     into(generatedAssetsDir)
 }
 

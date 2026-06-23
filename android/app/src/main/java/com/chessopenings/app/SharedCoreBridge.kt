@@ -10,6 +10,7 @@ object SharedCoreBridge {
 
     external fun canPlayKingsPawnOpening(): Int
     external fun canRunSharedDrillSession(): Int
+    external fun configureSharedEngine(executablePath: String?, nnueDirectory: String?)
     external fun createSharedDrillSession(lineJson: String): Long
     external fun submitSharedDrillMove(handle: Long, uci: String): Int
     external fun autoplaySharedDrillNext(handle: Long): Int

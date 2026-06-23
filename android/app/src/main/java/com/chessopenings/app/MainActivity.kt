@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -67,8 +69,72 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val engineAssets = AndroidStockfishAssets.prepare(this)
+        SharedCoreBridge.configureSharedEngine(
+            engineAssets.executablePath,
+            engineAssets.nnueDirectory,
+        )
         setContent {
             ChessOpeningsApp()
+        }
+    }
+}
+
+data class AndroidStockfishAssetConfig(
+    val executablePath: String?,
+    val nnueDirectory: String?,
+)
+
+object AndroidStockfishAssets {
+    private const val ASSET_ROOT = "stockfish"
+    private val NNUE_FILES = listOf(
+        "nn-1111cefa1111.nnue",
+        "nn-37f18f62d772.nnue",
+    )
+
+    fun prepare(context: Context): AndroidStockfishAssetConfig {
+        val assets = context.assets
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { candidate ->
+            runCatching {
+                assets.list("$ASSET_ROOT/$candidate")
+                    ?.contains("stockfish") == true
+            }.getOrDefault(false)
+        }
+
+        val stockfishPath = abi?.let { selectedAbi ->
+            val target = File(context.filesDir, "$ASSET_ROOT/$selectedAbi/stockfish")
+            copyAssetIfNeeded(context, "$ASSET_ROOT/$selectedAbi/stockfish", target)
+            target.setExecutable(true, true)
+            target.absolutePath.takeIf { target.canExecute() }
+        }
+
+        val nnueDirectory = if (stockfishPath != null) {
+            val directory = File(context.filesDir, "$ASSET_ROOT/nnue")
+            NNUE_FILES.forEach { name ->
+                copyAssetIfNeeded(context, "$ASSET_ROOT/$name", File(directory, name))
+            }
+            directory.absolutePath
+        } else {
+            null
+        }
+
+        return AndroidStockfishAssetConfig(stockfishPath, nnueDirectory)
+    }
+
+    private fun copyAssetIfNeeded(context: Context, assetPath: String, target: File) {
+        val expectedSize = runCatching {
+            context.assets.openFd(assetPath).use { it.length }
+        }.getOrDefault(-1L)
+
+        if (expectedSize > 0 && target.exists() && target.length() == expectedSize) {
+            return
+        }
+
+        target.parentFile?.mkdirs()
+        context.assets.open(assetPath).use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
         }
     }
 }

@@ -13,11 +13,22 @@ public func chessOpeningsCoreSharedPlayoutCreate(
             startingFEN: String(cString: startingFEN),
             userSide: side,
             level: SharedEngineLevel(rawSkill: Int(engineSkill)),
-            engine: SharedLegalMoveEngine()
+            engine: SharedPlayoutEngineFactory.shared.makeEngine()
           ) else {
         return 0
     }
     return SharedPlayoutBridgeStore.shared.insert(session)
+}
+
+@_cdecl("chess_openings_core_shared_engine_configure")
+public func chessOpeningsCoreSharedEngineConfigure(
+    _ executablePath: UnsafePointer<CChar>?,
+    _ nnueDirectory: UnsafePointer<CChar>?
+) {
+    SharedPlayoutEngineFactory.shared.configure(
+        executablePath: executablePath.map { String(cString: $0) },
+        nnueDirectory: nnueDirectory.map { String(cString: $0) }
+    )
 }
 
 @_cdecl("chess_openings_core_shared_playout_bootstrap")
@@ -239,6 +250,36 @@ private final class SharedPlayoutBridgeStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         sessions.removeValue(forKey: handle)
+    }
+}
+
+private final class SharedPlayoutEngineFactory: @unchecked Sendable {
+    static let shared = SharedPlayoutEngineFactory()
+
+    private let lock = NSLock()
+    private var executablePath: String?
+    private var nnueDirectory: String?
+
+    func configure(executablePath: String?, nnueDirectory: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.executablePath = executablePath?.isEmpty == false ? executablePath : nil
+        self.nnueDirectory = nnueDirectory?.isEmpty == false ? nnueDirectory : nil
+    }
+
+    func makeEngine() -> SharedEngineServicing {
+        lock.lock()
+        let path = executablePath
+        let nnue = nnueDirectory
+        lock.unlock()
+
+        if let path, FileManager.default.isExecutableFile(atPath: path) {
+            return SharedUCIProcessEngine(
+                executablePath: path,
+                nnueDirectory: nnue
+            )
+        }
+        return SharedLegalMoveEngine()
     }
 }
 

@@ -35,6 +35,42 @@ extern int32_t chess_openings_core_shared_playout_offer_draw(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_resign(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_undo(int64_t handle);
 extern void chess_openings_core_shared_playout_release(int64_t handle);
+extern void chess_openings_core_shared_engine_configure(const char *executable_path, const char *nnue_directory);
+
+JNIEXPORT void JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_configureSharedEngine(
+    JNIEnv *env,
+    jobject receiver,
+    jstring executable_path,
+    jstring nnue_directory
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    const char *executable_chars = 0;
+    const char *nnue_chars = 0;
+
+    if (executable_path != 0) {
+        executable_chars = (*env)->GetStringUTFChars(env, executable_path, 0);
+    }
+    if (nnue_directory != 0) {
+        nnue_chars = (*env)->GetStringUTFChars(env, nnue_directory, 0);
+    }
+
+    chess_openings_core_shared_engine_configure(executable_chars, nnue_chars);
+
+    if (executable_chars != 0) {
+        (*env)->ReleaseStringUTFChars(env, executable_path, executable_chars);
+    }
+    if (nnue_chars != 0) {
+        (*env)->ReleaseStringUTFChars(env, nnue_directory, nnue_chars);
+    }
+#else
+    (void)env;
+    (void)receiver;
+    (void)executable_path;
+    (void)nnue_directory;
+#endif
+}
 
 JNIEXPORT jlong JNICALL
 Java_com_chessopenings_app_SharedCoreBridge_createSharedDrillSession(

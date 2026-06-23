@@ -2016,17 +2016,17 @@ fun BoardArrowOverlay(
     arrow: BoardArrow,
     orientationSide: String,
 ) {
-    val progress = remember(arrow) { Animatable(0.18f) }
+    val progress = remember(arrow) { Animatable(0.35f) }
 
     LaunchedEffect(arrow) {
         var fullLengthHoldMs = 650L
         while (true) {
-            progress.snapTo(0.18f)
-            delay(150)
+            progress.snapTo(0.35f)
+            delay(100)
             progress.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(
-                    durationMillis = 450,
+                    durationMillis = 350,
                     easing = FastOutSlowInEasing,
                 ),
             )

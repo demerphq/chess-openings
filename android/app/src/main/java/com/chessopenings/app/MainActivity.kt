@@ -9,6 +9,11 @@ import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -55,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -69,10 +75,12 @@ import androidx.compose.ui.unit.dp
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1999,75 +2007,216 @@ fun BoardGrid(
                 }
             }
             boardArrow?.let { arrow ->
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawBoardArrow(arrow, orientationSide)
-                }
+                BoardArrowOverlay(arrow = arrow, orientationSide = orientationSide)
             }
         }
+    }
+}
+
+@Composable
+fun BoardArrowOverlay(
+    arrow: BoardArrow,
+    orientationSide: String,
+) {
+    val transition = rememberInfiniteTransition(label = "board arrow")
+    val progress by transition.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 3_000
+                0.18f at 0
+                0.18f at 150
+                1f at 600
+                1f at 3_000
+            },
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "board arrow progress",
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        drawBoardArrow(arrow, orientationSide, progress)
     }
 }
 
 private fun DrawScope.drawBoardArrow(
     arrow: BoardArrow,
     orientationSide: String,
+    progress: Float = 1f,
 ) {
     val boardSide = min(size.width, size.height)
-    val start = boardArrowCenter(arrow.from, orientationSide, boardSide) ?: return
-    val end = boardArrowCenter(arrow.to, orientationSide, boardSide) ?: return
-    val dx = end.x - start.x
-    val dy = end.y - start.y
-    if (dx == 0f && dy == 0f) return
+    val route = boardArrowRoute(arrow, orientationSide, boardSide) ?: return
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    val fullLength = routeLength(route)
+    if (fullLength == 0f || clampedProgress < 0.08f) return
 
-    val angle = atan2(dy, dx)
     val cell = boardSide / 8f
-    val shaftStart = androidx.compose.ui.geometry.Offset(
-        x = start.x + cos(angle) * cell * 0.20f,
-        y = start.y + sin(angle) * cell * 0.20f,
-    )
-    val shaftEnd = androidx.compose.ui.geometry.Offset(
-        x = end.x - cos(angle) * cell * 0.34f,
-        y = end.y - sin(angle) * cell * 0.34f,
-    )
+    val currentLength = fullLength * clampedProgress
+    val shaftStartInset = min(cell * 0.42f, currentLength * 0.25f)
+    val shaftEndInset = min(cell * 0.34f, currentLength * 0.35f)
+    val headScale = min(1f, currentLength / cell)
+    val shaftStartDistance = shaftStartInset
+    val shaftEndDistance = (currentLength - shaftEndInset)
+        .coerceAtLeast(shaftStartDistance)
     val arrowColor = Color(0xCC2F74CC)
-    drawLine(
+    drawRouteLine(
+        route = route,
+        startDistance = shaftStartDistance,
+        endDistance = shaftEndDistance,
         color = arrowColor,
-        start = shaftStart,
-        end = shaftEnd,
         strokeWidth = cell * 0.16f,
-        cap = StrokeCap.Round,
     )
 
-    val headLength = cell * 0.46f
-    val headWidth = cell * 0.30f
+    val headPoint = pointAtRouteDistance(route, currentLength) ?: return
+    val angle = headPoint.angle
+    val headLength = cell * 0.46f * headScale
+    val headWidth = cell * 0.30f * headScale
     val leftAngle = angle + (PI * 0.82).toFloat()
     val rightAngle = angle - (PI * 0.82).toFloat()
     val head = Path().apply {
-        moveTo(end.x, end.y)
+        moveTo(headPoint.offset.x, headPoint.offset.y)
         lineTo(
-            end.x + cos(leftAngle) * headLength + cos(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
-            end.y + sin(leftAngle) * headLength + sin(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
+            headPoint.offset.x + cos(leftAngle) * headLength + cos(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
+            headPoint.offset.y + sin(leftAngle) * headLength + sin(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
         )
         lineTo(
-            end.x + cos(rightAngle) * headLength + cos(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
-            end.y + sin(rightAngle) * headLength + sin(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
+            headPoint.offset.x + cos(rightAngle) * headLength + cos(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
+            headPoint.offset.y + sin(rightAngle) * headLength + sin(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
         )
         close()
     }
     drawPath(path = head, color = arrowColor)
 }
 
+private fun DrawScope.drawRouteLine(
+    route: List<Offset>,
+    startDistance: Float,
+    endDistance: Float,
+    color: Color,
+    strokeWidth: Float,
+) {
+    var consumed = 0f
+    route.zipWithNext().forEach { (segmentStart, segmentEnd) ->
+        val segmentLength = distanceBetween(segmentStart, segmentEnd)
+        if (segmentLength == 0f) return@forEach
+        val segmentFrom = consumed
+        val segmentTo = consumed + segmentLength
+        val overlapFrom = startDistance.coerceIn(segmentFrom, segmentTo)
+        val overlapTo = endDistance.coerceIn(segmentFrom, segmentTo)
+        if (overlapTo > overlapFrom) {
+            drawLine(
+                color = color,
+                start = interpolateSegment(
+                    segmentStart,
+                    segmentEnd,
+                    (overlapFrom - segmentFrom) / segmentLength,
+                ),
+                end = interpolateSegment(
+                    segmentStart,
+                    segmentEnd,
+                    (overlapTo - segmentFrom) / segmentLength,
+                ),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+        }
+        consumed = segmentTo
+    }
+}
+
+private data class RoutePosition(
+    val offset: Offset,
+    val angle: Float,
+)
+
+private fun pointAtRouteDistance(
+    route: List<Offset>,
+    distance: Float,
+): RoutePosition? {
+    var consumed = 0f
+    route.zipWithNext().forEach { (segmentStart, segmentEnd) ->
+        val segmentLength = distanceBetween(segmentStart, segmentEnd)
+        if (segmentLength == 0f) return@forEach
+        val segmentTo = consumed + segmentLength
+        if (distance <= segmentTo) {
+            val t = ((distance - consumed) / segmentLength).coerceIn(0f, 1f)
+            return RoutePosition(
+                offset = interpolateSegment(segmentStart, segmentEnd, t),
+                angle = atan2(segmentEnd.y - segmentStart.y, segmentEnd.x - segmentStart.x),
+            )
+        }
+        consumed = segmentTo
+    }
+
+    val lastStart = route.dropLast(1).lastOrNull() ?: return null
+    val lastEnd = route.lastOrNull() ?: return null
+    return RoutePosition(
+        offset = lastEnd,
+        angle = atan2(lastEnd.y - lastStart.y, lastEnd.x - lastStart.x),
+    )
+}
+
+private fun boardArrowRoute(
+    arrow: BoardArrow,
+    orientationSide: String,
+    boardSide: Float,
+): List<Offset>? {
+    val start = boardArrowCenter(arrow.from, orientationSide, boardSide) ?: return null
+    val end = boardArrowCenter(arrow.to, orientationSide, boardSide) ?: return null
+    val corner = knightMoveCorner(arrow)
+        ?.let { boardArrowCenter(it, orientationSide, boardSide) }
+    return if (corner == null) {
+        listOf(start, end)
+    } else {
+        listOf(start, corner, end)
+    }
+}
+
+private fun routeLength(route: List<Offset>): Float =
+    route.zipWithNext().sumOf { (start, end) ->
+        distanceBetween(start, end).toDouble()
+    }.toFloat()
+
+private fun distanceBetween(start: Offset, end: Offset): Float {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    return sqrt(dx * dx + dy * dy)
+}
+
+private fun interpolateSegment(start: Offset, end: Offset, t: Float): Offset =
+    Offset(
+        x = start.x + (end.x - start.x) * t,
+        y = start.y + (end.y - start.y) * t,
+    )
+
+private fun knightMoveCorner(arrow: BoardArrow): String? {
+    if (!arrow.from.isBoardCoordinate() || !arrow.to.isBoardCoordinate()) return null
+    val fromFile = arrow.from[0]
+    val fromRank = arrow.from[1]
+    val toFile = arrow.to[0]
+    val toRank = arrow.to[1]
+    val fileDelta = abs(toFile - fromFile)
+    val rankDelta = abs(toRank.digitToInt() - fromRank.digitToInt())
+    return when {
+        fileDelta == 1 && rankDelta == 2 -> "$fromFile$toRank"
+        fileDelta == 2 && rankDelta == 1 -> "$toFile$fromRank"
+        else -> null
+    }
+}
+
 private fun boardArrowCenter(
     coordinate: String,
     orientationSide: String,
     boardSide: Float,
-): androidx.compose.ui.geometry.Offset? {
+): Offset? {
     if (!coordinate.isBoardCoordinate()) return null
     val fileIndex = coordinate[0] - 'a'
     val rankIndex = coordinate[1].digitToInt() - 1
     val column = if (orientationSide.isBlackSide()) 7 - fileIndex else fileIndex
     val row = if (orientationSide.isBlackSide()) rankIndex else 7 - rankIndex
     val cell = boardSide / 8f
-    return androidx.compose.ui.geometry.Offset(
+    return Offset(
         x = (column + 0.5f) * cell,
         y = (row + 0.5f) * cell,
     )

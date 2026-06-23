@@ -1349,7 +1349,7 @@ fun DrillScreen(
     val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
     val boardArrow = if (inPlayout) {
         null
-    } else if (hintShown || solutionShown) {
+    } else if (solutionShown) {
         nextPly?.boardArrow()
     } else {
         expectedMoveArrow
@@ -1811,23 +1811,31 @@ fun DrillScreen(
             ) {
                 TextButton(
                     onClick = {
-                        hintShown = !hintShown
-                        if (hintShown) solutionShown = false
+                        when {
+                            !hintShown && !solutionShown -> {
+                                hintShown = true
+                            }
+
+                            hintShown -> {
+                                hintShown = false
+                                solutionShown = true
+                            }
+
+                            else -> {
+                                solutionShown = false
+                            }
+                        }
                     },
                     enabled = nextPly != null,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(if (hintShown) "hide hint" else "hint")
-                }
-                TextButton(
-                    onClick = {
-                        solutionShown = !solutionShown
-                        if (solutionShown) hintShown = false
-                    },
-                    enabled = nextPly != null,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (solutionShown) "hide" else "solution")
+                    Text(
+                        when {
+                            solutionShown -> "hide solution"
+                            hintShown -> "show solution"
+                            else -> "show hint"
+                        },
+                    )
                 }
                 TextButton(
                     onClick = {
@@ -2761,8 +2769,7 @@ fun drillProgressLabel(
     return if (currentPlyCount >= line.plies.size) {
         if (!madeMistake && !completedViaShowLine) "perfect" else "line complete"
     } else {
-        val next = line.plies[currentPlyCount]
-        "Move ${currentPlyCount + 1} of ${line.plies.size} · next ${next.san}"
+        "Move ${currentPlyCount + 1} of ${line.plies.size} · select a move"
     }
 }
 

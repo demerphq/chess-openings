@@ -242,7 +242,7 @@ class OpeningParserTest {
         assertEquals("perfect", drillProgressLabel(3, line))
         assertEquals("line complete", drillProgressLabel(3, line, madeMistake = true))
         assertEquals("line complete", drillProgressLabel(3, line, completedViaShowLine = true))
-        assertEquals("Move 2 of 3 · next e5", drillProgressLabel(1, line))
+        assertEquals("Move 2 of 3 · select a move", drillProgressLabel(1, line))
     }
 
     @Test

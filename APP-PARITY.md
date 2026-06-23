@@ -35,7 +35,6 @@ expected to differ by platform.
   - Show a playout best-move arrow/solution.
 - Board interaction polish:
   - Drag and drop pieces.
-  - Animate pieces moving between squares.
 
 ## Missing From iPhone
 

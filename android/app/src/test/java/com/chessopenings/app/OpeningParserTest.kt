@@ -185,6 +185,60 @@ class OpeningParserTest {
     }
 
     @Test
+    fun preservesAnimatedPieceIdentityAcrossMovesAndCaptures() {
+        val initialBoard = boardSquaresAfterPlies(emptyList())
+        val initialPieces = boardAnimationPieces(initialBoard, nextId = 1)
+        val pawnId = initialPieces.first { it.coordinate == "e2" }.id
+
+        val afterE4 = reconcileAnimatedBoardPieces(
+            previous = initialPieces,
+            board = boardSquaresAfterPlies(
+                listOf(PlySummary("e4", "e2e4", null, emptyList())),
+            ),
+            nextId = 33,
+        )
+
+        assertEquals(pawnId, afterE4.pieces.first { it.coordinate == "e4" }.id)
+        assertEquals(33, afterE4.nextId)
+
+        val captureBoard = listOf(
+            BoardSquare('d', 5, "wp", highlighted = true),
+            BoardSquare('e', 1, "wk", highlighted = false),
+            BoardSquare('e', 8, "bk", highlighted = false),
+        )
+        val beforeCapture = listOf(
+            AnimatedBoardPiece(1, "e4", "wp"),
+            AnimatedBoardPiece(2, "d5", "bp"),
+            AnimatedBoardPiece(3, "e1", "wk"),
+            AnimatedBoardPiece(4, "e8", "bk"),
+        )
+        val afterCapture = reconcileAnimatedBoardPieces(beforeCapture, captureBoard, nextId = 5)
+
+        assertEquals(1, afterCapture.pieces.first { it.coordinate == "d5" }.id)
+        assertEquals(false, afterCapture.pieces.any { it.id == 2 })
+    }
+
+    @Test
+    fun preservesBothAnimatedPieceIdentitiesDuringCastling() {
+        val before = listOf(
+            AnimatedBoardPiece(1, "e1", "wk"),
+            AnimatedBoardPiece(2, "h1", "wr"),
+            AnimatedBoardPiece(3, "e8", "bk"),
+        )
+        val board = listOf(
+            BoardSquare('g', 1, "wk", highlighted = true),
+            BoardSquare('f', 1, "wr", highlighted = true),
+            BoardSquare('e', 8, "bk", highlighted = false),
+        )
+
+        val after = reconcileAnimatedBoardPieces(before, board, nextId = 4)
+
+        assertEquals(1, after.pieces.first { it.coordinate == "g1" }.id)
+        assertEquals(2, after.pieces.first { it.coordinate == "f1" }.id)
+        assertEquals(4, after.nextId)
+    }
+
+    @Test
     fun buildsBoardFromFenForSharedDrillPosition() {
         val fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"
         val board = boardSquaresFromFen(fen, highlightedMove = "e7e5")

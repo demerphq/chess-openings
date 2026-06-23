@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -21,6 +22,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -57,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -211,6 +215,17 @@ data class BoardSquare(
 ) {
     val coordinate: String = "$file$rank"
 }
+
+data class AnimatedBoardPiece(
+    val id: Int,
+    val coordinate: String,
+    val pieceCode: String,
+)
+
+data class ReconciledAnimatedBoardPieces(
+    val pieces: List<AnimatedBoardPiece>,
+    val nextId: Int,
+)
 
 data class MoveQualityAnnotation(
     val square: String,
@@ -2372,6 +2387,20 @@ fun BoardGrid(
     val displayedSquares = remember(board, orientationSide) {
         displayedBoardSquares(board, orientationSide)
     }
+    val initialAnimatedPieces = remember { boardAnimationPieces(board, nextId = 1) }
+    var nextPieceId by remember { mutableIntStateOf(initialAnimatedPieces.size + 1) }
+    var animatedPieces by remember { mutableStateOf(initialAnimatedPieces) }
+
+    LaunchedEffect(board) {
+        val reconciled = reconcileAnimatedBoardPieces(
+            previous = animatedPieces,
+            board = board,
+            nextId = nextPieceId,
+        )
+        animatedPieces = reconciled.pieces
+        nextPieceId = reconciled.nextId
+    }
+
     Surface(
         modifier = modifier
             .aspectRatio(1f)
@@ -2397,14 +2426,56 @@ fun BoardGrid(
                                     ?.takeIf { it.square == square.coordinate }
                                     ?.quality,
                                 onClick = onSquareClick,
+                                showPiece = false,
                                 modifier = Modifier.weight(1f),
                             )
                         }
                     }
                 }
             }
+            AnimatedBoardPieces(
+                pieces = animatedPieces,
+                orientationSide = orientationSide,
+            )
             boardArrow?.let { arrow ->
                 BoardArrowOverlay(arrow = arrow, orientationSide = orientationSide)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedBoardPieces(
+    pieces: List<AnimatedBoardPiece>,
+    orientationSide: String,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val cellSize = maxWidth / 8
+        pieces.forEach { piece ->
+            key(piece.id) {
+                val column = boardDisplayColumn(piece.coordinate, orientationSide)
+                val row = boardDisplayRow(piece.coordinate, orientationSide)
+                val x by animateDpAsState(
+                    targetValue = cellSize * column,
+                    animationSpec = tween(durationMillis = 90),
+                    label = "piece-x-${piece.id}",
+                )
+                val y by animateDpAsState(
+                    targetValue = cellSize * row,
+                    animationSpec = tween(durationMillis = 90),
+                    label = "piece-y-${piece.id}",
+                )
+                pieceResourceId(piece.pieceCode)?.let { resourceId ->
+                    Image(
+                        painter = painterResource(resourceId),
+                        contentDescription = pieceDescription(piece.pieceCode),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .offset(x = x, y = y)
+                            .size(cellSize)
+                            .padding(5.dp),
+                    )
+                }
             }
         }
     }
@@ -2623,6 +2694,98 @@ private fun boardArrowCenter(
     )
 }
 
+fun boardAnimationPieces(
+    board: List<BoardSquare>,
+    nextId: Int,
+): List<AnimatedBoardPiece> =
+    board
+        .filter { it.pieceCode.isNotBlank() }
+        .mapIndexed { index, square ->
+            AnimatedBoardPiece(
+                id = nextId + index,
+                coordinate = square.coordinate,
+                pieceCode = square.pieceCode,
+            )
+        }
+
+fun reconcileAnimatedBoardPieces(
+    previous: List<AnimatedBoardPiece>,
+    board: List<BoardSquare>,
+    nextId: Int,
+): ReconciledAnimatedBoardPieces {
+    val targets = board.filter { it.pieceCode.isNotBlank() }
+    val unmatched = previous.toMutableList()
+    val result = mutableListOf<AnimatedBoardPiece>()
+    val remaining = mutableListOf<BoardSquare>()
+
+    targets.forEach { target ->
+        val index = unmatched.indexOfFirst {
+            it.coordinate == target.coordinate && it.pieceCode == target.pieceCode
+        }
+        if (index >= 0) {
+            result += unmatched.removeAt(index)
+        } else {
+            remaining += target
+        }
+    }
+
+    val unmatchedAfterExact = mutableListOf<BoardSquare>()
+    remaining.forEach { target ->
+        val index = unmatched.indices
+            .filter { unmatched[it].pieceCode == target.pieceCode }
+            .minByOrNull { boardSquareDistance(unmatched[it].coordinate, target.coordinate) }
+        if (index != null) {
+            val piece = unmatched.removeAt(index)
+            result += piece.copy(coordinate = target.coordinate)
+        } else {
+            unmatchedAfterExact += target
+        }
+    }
+
+    var availableId = nextId
+    unmatchedAfterExact.forEach { target ->
+        val side = target.pieceCode.firstOrNull()
+        val index = unmatched.indices
+            .filter { unmatched[it].pieceCode.firstOrNull() == side }
+            .minByOrNull { boardSquareDistance(unmatched[it].coordinate, target.coordinate) }
+        if (index != null) {
+            val piece = unmatched.removeAt(index)
+            result += piece.copy(
+                coordinate = target.coordinate,
+                pieceCode = target.pieceCode,
+            )
+        } else {
+            result += AnimatedBoardPiece(
+                id = availableId++,
+                coordinate = target.coordinate,
+                pieceCode = target.pieceCode,
+            )
+        }
+    }
+
+    return ReconciledAnimatedBoardPieces(
+        pieces = result,
+        nextId = availableId,
+    )
+}
+
+private fun boardSquareDistance(from: String, to: String): Int {
+    if (!from.isBoardCoordinate() || !to.isBoardCoordinate()) return Int.MAX_VALUE
+    val fileDelta = from[0] - to[0]
+    val rankDelta = from[1] - to[1]
+    return fileDelta * fileDelta + rankDelta * rankDelta
+}
+
+private fun boardDisplayColumn(coordinate: String, orientationSide: String): Int {
+    val fileIndex = coordinate[0] - 'a'
+    return if (orientationSide.isBlackSide()) 7 - fileIndex else fileIndex
+}
+
+private fun boardDisplayRow(coordinate: String, orientationSide: String): Int {
+    val rankIndex = coordinate[1].digitToInt() - 1
+    return if (orientationSide.isBlackSide()) rankIndex else 7 - rankIndex
+}
+
 @Composable
 fun BoardSquareCell(
     square: BoardSquare,
@@ -2635,6 +2798,7 @@ fun BoardSquareCell(
     captureTarget: Boolean = false,
     moveQuality: String? = null,
     onClick: ((String) -> Unit)? = null,
+    showPiece: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val baseColor = if (dark) Color(0xFF9D7A55) else Color(0xFFE9D7B9)
@@ -2689,16 +2853,18 @@ fun BoardSquareCell(
                 )
             }
         }
-        pieceResourceId(square.pieceCode)?.let { resourceId ->
-            Image(
-                painter = painterResource(resourceId),
-                contentDescription = pieceDescription(square.pieceCode),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxSize()
-                    .padding(2.dp),
-            )
+        if (showPiece) {
+            pieceResourceId(square.pieceCode)?.let { resourceId ->
+                Image(
+                    painter = painterResource(resourceId),
+                    contentDescription = pieceDescription(square.pieceCode),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxSize()
+                        .padding(2.dp),
+                )
+            }
         }
         moveQuality?.let { quality ->
             MoveQualityBadge(

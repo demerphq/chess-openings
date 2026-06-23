@@ -2193,16 +2193,18 @@ private fun interpolateSegment(start: Offset, end: Offset, t: Float): Offset =
 private fun knightMoveCorner(arrow: BoardArrow): String? {
     if (!arrow.from.isBoardCoordinate() || !arrow.to.isBoardCoordinate()) return null
     val fromFile = arrow.from[0]
-    val fromRank = arrow.from[1]
+    val fromRank = arrow.from[1].digitToInt()
     val toFile = arrow.to[0]
-    val toRank = arrow.to[1]
+    val toRank = arrow.to[1].digitToInt()
     val fileDelta = abs(toFile - fromFile)
-    val rankDelta = abs(toRank.digitToInt() - fromRank.digitToInt())
-    return when {
-        fileDelta == 1 && rankDelta == 2 -> "$fromFile$toRank"
-        fileDelta == 2 && rankDelta == 1 -> "$toFile$fromRank"
-        else -> null
+    val rankDelta = abs(toRank - fromRank)
+    if (!((fileDelta == 1 && rankDelta == 2) || (fileDelta == 2 && rankDelta == 1))) {
+        return null
     }
+
+    val cornerFile = fromFile + if (toFile > fromFile) 1 else -1
+    val cornerRank = fromRank + if (toRank > fromRank) 1 else -1
+    return "$cornerFile$cornerRank"
 }
 
 private fun boardArrowCenter(

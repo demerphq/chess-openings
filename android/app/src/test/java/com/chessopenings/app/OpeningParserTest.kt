@@ -1,5 +1,6 @@
 package com.chessopenings.app
 
+import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.json.JSONObject
@@ -262,6 +263,17 @@ class OpeningParserTest {
         assertEquals("h1", displayedBoardSquares(board, "black").first().coordinate)
         assertEquals("a8", displayedBoardSquares(board, "black").last().coordinate)
         assertEquals("h1", displayedBoardSquares(board, "BLACK").first().coordinate)
+    }
+
+    @Test
+    fun mapsDragPositionsToBoardCoordinatesForBothOrientations() {
+        assertEquals("a8", boardCoordinateAt(Offset(1f, 1f), 800f, "white"))
+        assertEquals("h1", boardCoordinateAt(Offset(799f, 799f), 800f, "white"))
+        assertEquals("h1", boardCoordinateAt(Offset(1f, 1f), 800f, "black"))
+        assertEquals("a8", boardCoordinateAt(Offset(799f, 799f), 800f, "black"))
+        assertEquals("c4", boardCoordinateAt(Offset(250f, 450f), 800f, "white"))
+        assertEquals(null, boardCoordinateAt(Offset(800f, 400f), 800f, "white"))
+        assertEquals(null, boardCoordinateAt(Offset(-1f, 400f), 800f, "white"))
     }
 
     @Test

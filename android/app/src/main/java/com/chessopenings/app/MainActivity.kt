@@ -20,6 +20,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -77,13 +78,17 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.PI
@@ -1933,6 +1938,22 @@ fun DrillScreen(
                 captureTargetCoordinates = captureTargetCoordinates,
                 boardArrow = boardArrow,
                 moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
+                canDragCoordinate = { coordinate ->
+                    if (inPlayout) {
+                        canStartPlayoutMove(coordinate, board, opening.side)
+                    } else {
+                        canStartDrillMove(coordinate, board, nextPly, opening.side)
+                    }
+                },
+                onSquareDrag = { from, to ->
+                    if (isPromotionMove(from, to, board)) {
+                        pendingPromotion = PendingPromotionMove(from, to, inPlayout = inPlayout)
+                    } else if (inPlayout) {
+                        submitPlayoutMove("$from$to")
+                    } else {
+                        submitDrillMove("$from$to")
+                    }
+                },
                 onSquareClick = { coordinate ->
                     if (inPlayout) {
                         val selected = playoutSelectedSquare
@@ -2382,6 +2403,8 @@ fun BoardGrid(
     captureTargetCoordinates: Set<String> = emptySet(),
     boardArrow: BoardArrow? = null,
     moveQualityAnnotation: MoveQualityAnnotation? = null,
+    canDragCoordinate: ((String) -> Boolean)? = null,
+    onSquareDrag: ((String, String) -> Unit)? = null,
     onSquareClick: ((String) -> Unit)? = null,
 ) {
     val displayedSquares = remember(board, orientationSide) {
@@ -2390,6 +2413,9 @@ fun BoardGrid(
     val initialAnimatedPieces = remember { boardAnimationPieces(board, nextId = 1) }
     var nextPieceId by remember { mutableIntStateOf(initialAnimatedPieces.size + 1) }
     var animatedPieces by remember { mutableStateOf(initialAnimatedPieces) }
+    var boardPixelSize by remember { mutableStateOf(IntSize.Zero) }
+    var draggedCoordinate by remember { mutableStateOf<String?>(null) }
+    var dragPosition by remember { mutableStateOf<Offset?>(null) }
 
     LaunchedEffect(board) {
         val reconciled = reconcileAnimatedBoardPieces(
@@ -2401,6 +2427,53 @@ fun BoardGrid(
         nextPieceId = reconciled.nextId
     }
 
+    val boardDragModifier = if (onSquareDrag == null) {
+        Modifier
+    } else {
+        Modifier
+            .onSizeChanged { boardPixelSize = it }
+            .pointerInput(board, orientationSide, boardPixelSize, canDragCoordinate) {
+                detectDragGestures(
+                    onDragStart = { position ->
+                        val coordinate = boardCoordinateAt(
+                            position = position,
+                            boardSide = boardPixelSize.width.toFloat(),
+                            orientationSide = orientationSide,
+                        )
+                        if (coordinate != null && canDragCoordinate?.invoke(coordinate) != false) {
+                            draggedCoordinate = coordinate
+                            dragPosition = position
+                        }
+                    },
+                    onDrag = { change, _ ->
+                        if (draggedCoordinate != null) {
+                            change.consume()
+                            dragPosition = change.position
+                        }
+                    },
+                    onDragCancel = {
+                        draggedCoordinate = null
+                        dragPosition = null
+                    },
+                    onDragEnd = {
+                        val from = draggedCoordinate
+                        val to = dragPosition?.let { position ->
+                            boardCoordinateAt(
+                                position = position,
+                                boardSide = boardPixelSize.width.toFloat(),
+                                orientationSide = orientationSide,
+                            )
+                        }
+                        draggedCoordinate = null
+                        dragPosition = null
+                        if (from != null && to != null && from != to) {
+                            onSquareDrag(from, to)
+                        }
+                    },
+                )
+            }
+    }
+
     Surface(
         modifier = modifier
             .aspectRatio(1f)
@@ -2408,7 +2481,7 @@ fun BoardGrid(
             .border(1.dp, Color(0xFF6F655A), RoundedCornerShape(6.dp)),
         color = Color(0xFFEEE2D2),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().then(boardDragModifier)) {
             Column(modifier = Modifier.fillMaxSize()) {
                 displayedSquares.chunked(8).forEach { rankSquares ->
                     Row(modifier = Modifier.weight(1f)) {
@@ -2436,6 +2509,9 @@ fun BoardGrid(
             AnimatedBoardPieces(
                 pieces = animatedPieces,
                 orientationSide = orientationSide,
+                draggedCoordinate = draggedCoordinate,
+                dragPosition = dragPosition,
+                boardSidePixels = boardPixelSize.width.toFloat(),
             )
             boardArrow?.let { arrow ->
                 BoardArrowOverlay(arrow = arrow, orientationSide = orientationSide)
@@ -2448,23 +2524,38 @@ fun BoardGrid(
 private fun AnimatedBoardPieces(
     pieces: List<AnimatedBoardPiece>,
     orientationSide: String,
+    draggedCoordinate: String?,
+    dragPosition: Offset?,
+    boardSidePixels: Float,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val cellSize = maxWidth / 8
+        val density = LocalDensity.current
         pieces.forEach { piece ->
             key(piece.id) {
                 val column = boardDisplayColumn(piece.coordinate, orientationSide)
                 val row = boardDisplayRow(piece.coordinate, orientationSide)
-                val x by animateDpAsState(
+                val animatedX by animateDpAsState(
                     targetValue = cellSize * column,
                     animationSpec = tween(durationMillis = 90),
                     label = "piece-x-${piece.id}",
                 )
-                val y by animateDpAsState(
+                val animatedY by animateDpAsState(
                     targetValue = cellSize * row,
                     animationSpec = tween(durationMillis = 90),
                     label = "piece-y-${piece.id}",
                 )
+                val isDragged = piece.coordinate == draggedCoordinate && dragPosition != null
+                val x = if (isDragged && boardSidePixels > 0f) {
+                    with(density) { (dragPosition.x - boardSidePixels / 16f).toDp() }
+                } else {
+                    animatedX
+                }
+                val y = if (isDragged && boardSidePixels > 0f) {
+                    with(density) { (dragPosition.y - boardSidePixels / 16f).toDp() }
+                } else {
+                    animatedY
+                }
                 pieceResourceId(piece.pieceCode)?.let { resourceId ->
                     Image(
                         painter = painterResource(resourceId),
@@ -2784,6 +2875,28 @@ private fun boardDisplayColumn(coordinate: String, orientationSide: String): Int
 private fun boardDisplayRow(coordinate: String, orientationSide: String): Int {
     val rankIndex = coordinate[1].digitToInt() - 1
     return if (orientationSide.isBlackSide()) rankIndex else 7 - rankIndex
+}
+
+fun boardCoordinateAt(
+    position: Offset,
+    boardSide: Float,
+    orientationSide: String,
+): String? {
+    if (boardSide <= 0f ||
+        position.x < 0f ||
+        position.y < 0f ||
+        position.x >= boardSide ||
+        position.y >= boardSide
+    ) {
+        return null
+    }
+
+    val cellSize = boardSide / 8f
+    val displayedColumn = (position.x / cellSize).toInt()
+    val displayedRow = (position.y / cellSize).toInt()
+    val fileIndex = if (orientationSide.isBlackSide()) 7 - displayedColumn else displayedColumn
+    val rank = if (orientationSide.isBlackSide()) displayedRow + 1 else 8 - displayedRow
+    return "${'a' + fileIndex}$rank"
 }
 
 @Composable

@@ -33,8 +33,6 @@ expected to differ by platform.
   - Ask Stockfish for the best move while in engine playout.
   - Show a playout hint source square.
   - Show a playout best-move arrow/solution.
-- Board interaction polish:
-  - Drag and drop pieces.
 
 ## Missing From iPhone
 

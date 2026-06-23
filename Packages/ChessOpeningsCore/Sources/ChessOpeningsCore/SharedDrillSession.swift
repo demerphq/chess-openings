@@ -127,6 +127,23 @@ public final class SharedDrillSession {
         board = Board(position: .standard)
     }
 
+    public func restore(plyIndex requestedPlyIndex: Int, userSide: OpeningSide) {
+        reset()
+
+        let restoredPlyCount = min(max(requestedPlyIndex, 0), line.plies.count)
+        for index in 0..<restoredPlyCount {
+            let ply = line.plies[index]
+            guard let move = SANParser.parse(move: ply.san, in: board.position) else {
+                reset()
+                return
+            }
+            _ = apply(move, san: ply.san, byUser: Self.isUserPly(index, userSide: userSide))
+        }
+        if plyIndex >= line.plies.count {
+            status = .lineComplete
+        }
+    }
+
     public func undo() {
         guard !moves.isEmpty else { return }
 
@@ -185,5 +202,14 @@ public final class SharedDrillSession {
         lhs.start == rhs.start
             && lhs.end == rhs.end
             && lhs.promotedPiece?.kind == rhs.promotedPiece?.kind
+    }
+
+    private static func isUserPly(_ index: Int, userSide: OpeningSide) -> Bool {
+        switch userSide {
+        case .white:
+            return index.isMultiple(of: 2)
+        case .black:
+            return !index.isMultiple(of: 2)
+        }
     }
 }

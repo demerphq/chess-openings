@@ -18,6 +18,7 @@ object SharedCoreBridge {
     external fun sharedDrillPositionFen(handle: Long): String?
     external fun undoSharedDrillSession(handle: Long): Int
     external fun resetSharedDrillSession(handle: Long): Int
+    external fun restoreSharedDrillSession(handle: Long, plyIndex: Int, userSide: Int): Int
     external fun releaseSharedDrillSession(handle: Long)
 
     fun isChessKitAvailable(): Boolean =

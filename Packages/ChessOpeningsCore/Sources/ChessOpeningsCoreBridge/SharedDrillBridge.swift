@@ -98,6 +98,20 @@ public func chessOpeningsCoreSharedDrillReset(_ handle: Int64) -> Int32 {
     return 1
 }
 
+@_cdecl("chess_openings_core_shared_drill_restore")
+public func chessOpeningsCoreSharedDrillRestore(
+    _ handle: Int64,
+    _ plyIndex: Int32,
+    _ userSide: Int32
+) -> Int32 {
+    guard let session = SharedDrillBridgeStore.shared.session(for: handle),
+          let side = SharedDrillBridgeUserSide(rawValue: userSide)?.openingSide else {
+        return -1
+    }
+    session.restore(plyIndex: Int(plyIndex), userSide: side)
+    return Int32(session.plyIndex)
+}
+
 @_cdecl("chess_openings_core_shared_drill_undo")
 public func chessOpeningsCoreSharedDrillUndo(_ handle: Int64) -> Int32 {
     guard let session = SharedDrillBridgeStore.shared.session(for: handle) else {
@@ -135,6 +149,20 @@ private enum SharedDrillBridgeStatus: Int32 {
             self = .mistake
         case .lineComplete:
             self = .lineComplete
+        }
+    }
+}
+
+private enum SharedDrillBridgeUserSide: Int32 {
+    case white = 0
+    case black = 1
+
+    var openingSide: OpeningSide {
+        switch self {
+        case .white:
+            return .white
+        case .black:
+            return .black
         }
     }
 }

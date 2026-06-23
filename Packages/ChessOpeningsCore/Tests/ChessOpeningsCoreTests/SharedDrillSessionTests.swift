@@ -98,6 +98,40 @@ import Testing
     #expect(session.nextBookPly?.san == "e5")
 }
 
+@Test func sharedDrillRestoreRebuildsWhiteSideHistoryForUndo() throws {
+    let session = SharedDrillSession(line: italianLine)
+
+    session.restore(plyIndex: 2, userSide: .white)
+
+    #expect(session.plyIndex == 2)
+    #expect(session.moves.map(\.san) == ["e4", "e5"])
+    #expect(session.moves.map(\.byUser) == [true, false])
+    #expect(session.nextBookPly?.san == "Nf3")
+
+    session.undo()
+
+    #expect(session.plyIndex == 0)
+    #expect(session.moves.isEmpty)
+    #expect(session.nextBookPly?.san == "e4")
+}
+
+@Test func sharedDrillRestoreRebuildsBlackSideHistoryForUndo() throws {
+    let session = SharedDrillSession(line: italianLine)
+
+    session.restore(plyIndex: 3, userSide: .black)
+
+    #expect(session.plyIndex == 3)
+    #expect(session.status == .lineComplete)
+    #expect(session.moves.map(\.san) == ["e4", "e5", "Nf3"])
+    #expect(session.moves.map(\.byUser) == [false, true, false])
+
+    session.undo()
+
+    #expect(session.plyIndex == 1)
+    #expect(session.moves.map(\.san) == ["e4"])
+    #expect(session.nextBookPly?.san == "e5")
+}
+
 private let italianLine = Line(
     name: "Bc5",
     source: .masters,

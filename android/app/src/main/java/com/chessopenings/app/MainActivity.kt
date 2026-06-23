@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,6 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -64,6 +68,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.security.MessageDigest
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -190,6 +199,11 @@ data class MoveQualityAnnotation(
     val square: String,
     val quality: String,
     val id: Long = System.currentTimeMillis(),
+)
+
+data class BoardArrow(
+    val from: String,
+    val to: String,
 )
 
 data class DrillSelection(
@@ -1300,6 +1314,7 @@ fun DrillScreen(
     var hintShown by remember(line) { mutableStateOf(false) }
     var solutionShown by remember(line) { mutableStateOf(false) }
     var showLineIsPlaying by remember(line) { mutableStateOf(false) }
+    var expectedMoveArrow by remember(line) { mutableStateOf<BoardArrow?>(null) }
     var madeMistake by remember(line) { mutableStateOf(false) }
     var completedViaShowLine by remember(line) { mutableStateOf(false) }
     var completionRecorded by remember(line) { mutableStateOf(false) }
@@ -1326,6 +1341,13 @@ fun DrillScreen(
     val nextPly = if (inPlayout) null else line.plies.getOrNull(currentPlyCount)
     val hintCoordinate = if (hintShown && !solutionShown) nextPly?.fromCoordinate() else null
     val solutionCoordinates = if (solutionShown) nextPly?.moveCoordinates().orEmpty() else emptySet()
+    val boardArrow = if (inPlayout) {
+        null
+    } else if (hintShown || solutionShown) {
+        nextPly?.boardArrow()
+    } else {
+        expectedMoveArrow
+    }
 
     DisposableEffect(opening, line) {
         val handle = SharedCoreBridge.createSharedDrillSession(line)
@@ -1343,6 +1365,7 @@ fun DrillScreen(
         hintShown = false
         solutionShown = false
         showLineIsPlaying = false
+        expectedMoveArrow = null
         madeMistake = restoredSnapshot?.madeMistake == true
         completedViaShowLine = false
         completionRecorded = restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT
@@ -1413,6 +1436,7 @@ fun DrillScreen(
             feedback = null
             hintShown = false
             solutionShown = false
+            expectedMoveArrow = null
             if (outcome != SHARED_DRILL_ACCEPTED && outcome != SHARED_DRILL_LINE_COMPLETE) {
                 showLineIsPlaying = false
             }
@@ -1535,6 +1559,7 @@ fun DrillScreen(
             selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
             hintCoordinate = if (inPlayout) null else hintCoordinate,
             solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
+            boardArrow = boardArrow,
             moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
             onSquareClick = { coordinate ->
                 if (inPlayout) {
@@ -1624,6 +1649,7 @@ fun DrillScreen(
                             feedback = null
                             hintShown = false
                             solutionShown = false
+                            expectedMoveArrow = null
                             showLineIsPlaying = false
                         }
 
@@ -1639,6 +1665,7 @@ fun DrillScreen(
                             feedback = expectedMoveFeedback(nextPly, drillMode)
                             solutionShown = drillMode == DRILL_MODE_SHOW_AND_RETRY
                             hintShown = false
+                            expectedMoveArrow = nextPly?.boardArrow()
                             showLineIsPlaying = false
                         }
 
@@ -1646,6 +1673,7 @@ fun DrillScreen(
                             selectedSquare = null
                             feedback = "Illegal move"
                             hintShown = false
+                            expectedMoveArrow = null
                             showLineIsPlaying = false
                         }
                     }
@@ -1809,6 +1837,7 @@ fun DrillScreen(
                         feedback = null
                         hintShown = false
                         solutionShown = false
+                        expectedMoveArrow = null
                         showLineIsPlaying = false
                     },
                     enabled = currentPlyCount > initialPlyCount,
@@ -1829,6 +1858,7 @@ fun DrillScreen(
                         feedback = null
                         hintShown = false
                         solutionShown = false
+                        expectedMoveArrow = null
                         showLineIsPlaying = false
                     },
                     enabled = currentPlyCount > initialPlyCount,
@@ -1846,6 +1876,7 @@ fun DrillScreen(
                         feedback = null
                         hintShown = false
                         solutionShown = false
+                        expectedMoveArrow = null
                     }
                 },
                 enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
@@ -1903,6 +1934,7 @@ fun BoardPreview(
 ) {
     val highlightedMove = line.plies.firstOrNull()?.uci.orEmpty()
     val board = remember(highlightedMove) { startingBoardSquares(highlightedMove) }
+    val previewArrow = remember(highlightedMove) { boardArrowFromUci(highlightedMove) }
 
     Column(
         modifier = modifier,
@@ -1911,6 +1943,7 @@ fun BoardPreview(
         BoardGrid(
             board = board,
             orientationSide = orientationSide,
+            boardArrow = previewArrow,
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
@@ -1929,6 +1962,7 @@ fun BoardGrid(
     selectedCoordinate: String? = null,
     hintCoordinate: String? = null,
     solutionCoordinates: Set<String> = emptySet(),
+    boardArrow: BoardArrow? = null,
     moveQualityAnnotation: MoveQualityAnnotation? = null,
     onSquareClick: ((String) -> Unit)? = null,
 ) {
@@ -1942,28 +1976,101 @@ fun BoardGrid(
             .border(1.dp, Color(0xFF6F655A), RoundedCornerShape(6.dp)),
         color = Color(0xFFEEE2D2),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            displayedSquares.chunked(8).forEach { rankSquares ->
-                Row(modifier = Modifier.weight(1f)) {
-                    rankSquares.forEachIndexed { index, square ->
-                        BoardSquareCell(
-                            square = square,
-                            dark = isDarkBoardSquare(square.file, square.rank),
-                            orientationSide = orientationSide,
-                            selected = square.coordinate == selectedCoordinate,
-                            hinted = square.coordinate == hintCoordinate,
-                            solution = square.coordinate in solutionCoordinates,
-                            moveQuality = moveQualityAnnotation
-                                ?.takeIf { it.square == square.coordinate }
-                                ?.quality,
-                            onClick = onSquareClick,
-                            modifier = Modifier.weight(1f),
-                        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                displayedSquares.chunked(8).forEach { rankSquares ->
+                    Row(modifier = Modifier.weight(1f)) {
+                        rankSquares.forEach { square ->
+                            BoardSquareCell(
+                                square = square,
+                                dark = isDarkBoardSquare(square.file, square.rank),
+                                orientationSide = orientationSide,
+                                selected = square.coordinate == selectedCoordinate,
+                                hinted = square.coordinate == hintCoordinate,
+                                solution = square.coordinate in solutionCoordinates,
+                                moveQuality = moveQualityAnnotation
+                                    ?.takeIf { it.square == square.coordinate }
+                                    ?.quality,
+                                onClick = onSquareClick,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
+                }
+            }
+            boardArrow?.let { arrow ->
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawBoardArrow(arrow, orientationSide)
                 }
             }
         }
     }
+}
+
+private fun DrawScope.drawBoardArrow(
+    arrow: BoardArrow,
+    orientationSide: String,
+) {
+    val boardSide = min(size.width, size.height)
+    val start = boardArrowCenter(arrow.from, orientationSide, boardSide) ?: return
+    val end = boardArrowCenter(arrow.to, orientationSide, boardSide) ?: return
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    if (dx == 0f && dy == 0f) return
+
+    val angle = atan2(dy, dx)
+    val cell = boardSide / 8f
+    val shaftStart = androidx.compose.ui.geometry.Offset(
+        x = start.x + cos(angle) * cell * 0.20f,
+        y = start.y + sin(angle) * cell * 0.20f,
+    )
+    val shaftEnd = androidx.compose.ui.geometry.Offset(
+        x = end.x - cos(angle) * cell * 0.34f,
+        y = end.y - sin(angle) * cell * 0.34f,
+    )
+    val arrowColor = Color(0xCC2F74CC)
+    drawLine(
+        color = arrowColor,
+        start = shaftStart,
+        end = shaftEnd,
+        strokeWidth = cell * 0.16f,
+        cap = StrokeCap.Round,
+    )
+
+    val headLength = cell * 0.46f
+    val headWidth = cell * 0.30f
+    val leftAngle = angle + (PI * 0.82).toFloat()
+    val rightAngle = angle - (PI * 0.82).toFloat()
+    val head = Path().apply {
+        moveTo(end.x, end.y)
+        lineTo(
+            end.x + cos(leftAngle) * headLength + cos(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
+            end.y + sin(leftAngle) * headLength + sin(angle + PI.toFloat() / 2f) * headWidth * 0.22f,
+        )
+        lineTo(
+            end.x + cos(rightAngle) * headLength + cos(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
+            end.y + sin(rightAngle) * headLength + sin(angle - PI.toFloat() / 2f) * headWidth * 0.22f,
+        )
+        close()
+    }
+    drawPath(path = head, color = arrowColor)
+}
+
+private fun boardArrowCenter(
+    coordinate: String,
+    orientationSide: String,
+    boardSide: Float,
+): androidx.compose.ui.geometry.Offset? {
+    if (!coordinate.isBoardCoordinate()) return null
+    val fileIndex = coordinate[0] - 'a'
+    val rankIndex = coordinate[1].digitToInt() - 1
+    val column = if (orientationSide.isBlackSide()) 7 - fileIndex else fileIndex
+    val row = if (orientationSide.isBlackSide()) rankIndex else 7 - rankIndex
+    val cell = boardSide / 8f
+    return androidx.compose.ui.geometry.Offset(
+        x = (column + 0.5f) * cell,
+        y = (row + 0.5f) * cell,
+    )
 }
 
 @Composable
@@ -2748,6 +2855,19 @@ fun PlySummary.moveCoordinates(): Set<String> {
     return listOf(from, to)
         .filter { it.isBoardCoordinate() }
         .toSet()
+}
+
+fun PlySummary.boardArrow(): BoardArrow? = boardArrowFromUci(uci)
+
+fun boardArrowFromUci(uci: String): BoardArrow? {
+    if (uci.length < 4) return null
+    val from = uci.substring(0, 2)
+    val to = uci.substring(2, 4)
+    return if (from.isBoardCoordinate() && to.isBoardCoordinate()) {
+        BoardArrow(from = from, to = to)
+    } else {
+        null
+    }
 }
 
 private fun promotedPieceCode(pieceCode: String, promotion: Char?): String? {

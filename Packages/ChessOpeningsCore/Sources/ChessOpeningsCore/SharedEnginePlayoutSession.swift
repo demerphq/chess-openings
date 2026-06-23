@@ -124,7 +124,7 @@ public enum SharedPlayoutSubmitOutcome: Equatable, Sendable {
     case gameOver(SharedGameOverReason)
 }
 
-public final class SharedEnginePlayoutSession {
+public final class SharedEnginePlayoutSession: @unchecked Sendable {
     public let userSide: OpeningSide
     public let level: SharedEngineLevel
     public private(set) var status: SharedPlayoutStatus

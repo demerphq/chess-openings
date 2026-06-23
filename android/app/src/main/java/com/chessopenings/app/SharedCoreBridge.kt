@@ -20,6 +20,14 @@ object SharedCoreBridge {
     external fun resetSharedDrillSession(handle: Long): Int
     external fun restoreSharedDrillSession(handle: Long, plyIndex: Int, userSide: Int): Int
     external fun releaseSharedDrillSession(handle: Long)
+    external fun createSharedPlayoutSession(startingFen: String, userSide: Int, engineSkill: Int): Long
+    external fun bootstrapSharedPlayoutSession(handle: Long): Int
+    external fun submitSharedPlayoutMove(handle: Long, uci: String): Int
+    external fun sharedPlayoutPlyIndex(handle: Long): Int
+    external fun sharedPlayoutStatus(handle: Long): Int
+    external fun sharedPlayoutPositionFen(handle: Long): String?
+    external fun undoSharedPlayoutSession(handle: Long): Int
+    external fun releaseSharedPlayoutSession(handle: Long)
 
     fun isChessKitAvailable(): Boolean =
         canPlayKingsPawnOpening() == 1

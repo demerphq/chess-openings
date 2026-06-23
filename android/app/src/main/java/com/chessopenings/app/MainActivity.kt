@@ -87,10 +87,6 @@ data class AndroidStockfishAssetConfig(
 
 object AndroidStockfishAssets {
     private const val ASSET_ROOT = "stockfish"
-    private val NNUE_FILES = listOf(
-        "nn-1111cefa1111.nnue",
-        "nn-37f18f62d772.nnue",
-    )
 
     fun prepare(context: Context): AndroidStockfishAssetConfig {
         val assets = context.assets
@@ -110,15 +106,29 @@ object AndroidStockfishAssets {
 
         val nnueDirectory = if (stockfishPath != null) {
             val directory = File(context.filesDir, "$ASSET_ROOT/nnue")
-            NNUE_FILES.forEach { name ->
-                copyAssetIfNeeded(context, "$ASSET_ROOT/$name", File(directory, name))
-            }
-            directory.absolutePath
+            val copied = copyNnueAssets(context, ASSET_ROOT, directory) +
+                copyNnueAssets(context, "$ASSET_ROOT/nnue", directory)
+            directory.absolutePath.takeIf { copied > 0 }
         } else {
             null
         }
 
         return AndroidStockfishAssetConfig(stockfishPath, nnueDirectory)
+    }
+
+    private fun copyNnueAssets(context: Context, assetDirectory: String, targetDirectory: File): Int {
+        val names = runCatching {
+            context.assets.list(assetDirectory).orEmpty().filter { it.endsWith(".nnue") }
+        }.getOrDefault(emptyList())
+
+        names.forEach { name ->
+            copyAssetIfNeeded(
+                context,
+                "$assetDirectory/$name",
+                File(targetDirectory, name),
+            )
+        }
+        return names.size
     }
 
     private fun copyAssetIfNeeded(context: Context, assetPath: String, target: File) {

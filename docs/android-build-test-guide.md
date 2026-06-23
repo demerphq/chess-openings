@@ -39,6 +39,18 @@ Expected result: both commands end without an error. `core-test` should report t
 
 ## Build The Android App
 
+If you want the Android app to use the real Stockfish engine during playout,
+build the Stockfish assets once first:
+
+```sh
+make android-stockfish-build
+```
+
+This downloads the pinned official Stockfish source release, builds the
+emulator and arm64 Android engine binaries, downloads the matching NNUE files,
+and stages everything under `android/stockfish/`. Those generated files are not
+committed to git.
+
 Build the debug Android app:
 
 ```sh

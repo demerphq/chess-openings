@@ -126,14 +126,26 @@ private actor SharedUCIProcessClient {
 
     private func configureNNUEFiles() {
         guard let nnueDirectory else { return }
-        let mainPath = "\(nnueDirectory)/nn-1111cefa1111.nnue"
-        let smallPath = "\(nnueDirectory)/nn-37f18f62d772.nnue"
         let files = FileManager.default
+        let directoryURL = URL(fileURLWithPath: nnueDirectory)
+        let nnueFiles = ((try? files.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )) ?? [])
+            .filter { $0.pathExtension == "nnue" }
+            .compactMap { url -> (url: URL, size: Int)? in
+                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                return size.map { (url, $0) }
+            }
+            .sorted { $0.size > $1.size }
 
-        if files.fileExists(atPath: mainPath) {
+        if let mainPath = nnueFiles.first?.url.path,
+           files.fileExists(atPath: mainPath) {
             send("setoption name EvalFile value \(mainPath)")
         }
-        if files.fileExists(atPath: smallPath) {
+        if let smallPath = nnueFiles.last?.url.path,
+           smallPath != nnueFiles.first?.url.path,
+           files.fileExists(atPath: smallPath) {
             send("setoption name EvalFileSmall value \(smallPath)")
         }
     }

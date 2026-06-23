@@ -24,7 +24,7 @@ ANDROID_APK ?= $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk
 SWIFT_BIN ?= $(HOME)/.local/share/swift-toolchains/swift-6.3.2-RELEASE-ubuntu24.04/usr/bin/swift
 CORE_DIR ?= Packages/ChessOpeningsCore
 
-.PHONY: build test test-all clean android-bootstrap android-build android-test android-clean android-emulator-image android-emulator-create android-emulator-launch android-emulator-wait android-install android-run android-emulator-run swift-android-bootstrap core-test core-android-build core-android-bridge-build android-sync-swift-bridge-libs
+.PHONY: build test test-all clean android-bootstrap android-build android-test android-clean android-emulator-image android-emulator-create android-emulator-launch android-emulator-wait android-install android-run android-emulator-run android-stockfish-build swift-android-bootstrap core-test core-android-build core-android-bridge-build android-sync-swift-bridge-libs
 
 # build only (no tests)
 build:
@@ -85,6 +85,9 @@ android-run:
 	$(ANDROID_ENV) $(ANDROID_ADB) shell monkey -p com.chessopenings.app -c android.intent.category.LAUNCHER 1
 
 android-emulator-run: android-emulator-wait android-install android-run
+
+android-stockfish-build:
+	$(ANDROID_ENV) ./Scripts/Android/build-stockfish.sh
 
 swift-android-bootstrap:
 	./Scripts/Android/bootstrap-swift-android.sh

@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -183,6 +185,12 @@ data class BoardSquare(
 ) {
     val coordinate: String = "$file$rank"
 }
+
+data class MoveQualityAnnotation(
+    val square: String,
+    val quality: String,
+    val id: Long = System.currentTimeMillis(),
+)
 
 data class DrillSelection(
     val opening: OpeningSummary,
@@ -1301,6 +1309,7 @@ fun DrillScreen(
     var playoutSelectedSquare by remember(line) { mutableStateOf<String?>(null) }
     var playoutFeedback by remember(line) { mutableStateOf<String?>(null) }
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
+    var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
     val inPlayout = playoutHandle != 0L
     val visiblePlies = line.plies.take(currentPlyCount)
     val visibleMoveList = visiblePlies + playoutMoves.map { it.toPlySummary() }
@@ -1340,6 +1349,7 @@ fun DrillScreen(
         playoutSelectedSquare = null
         playoutFeedback = null
         playoutMoves = emptyList()
+        moveQualityAnnotation = null
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredStartFen = restoredSnapshot.playoutStartFen
                 ?: restoredSnapshot.playoutFen
@@ -1360,6 +1370,7 @@ fun DrillScreen(
                 playoutPositionFen = sharedPlayoutPositionFen(playout, restoredSnapshot.playoutFen ?: restoredStartFen)
                 playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
                 playoutFeedback = "resumed playout"
+                moveQualityAnnotation = null
             }
         }
         onDispose {
@@ -1425,6 +1436,14 @@ fun DrillScreen(
         }
     }
 
+    LaunchedEffect(moveQualityAnnotation?.id, settingsRevision) {
+        val annotation = moveQualityAnnotation ?: return@LaunchedEffect
+        delay(settingsStore.moveQualityBadgeMs.toLong())
+        if (moveQualityAnnotation?.id == annotation.id) {
+            moveQualityAnnotation = null
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1467,6 +1486,7 @@ fun DrillScreen(
             selectedCoordinate = if (inPlayout) playoutSelectedSquare else selectedSquare,
             hintCoordinate = if (inPlayout) null else hintCoordinate,
             solutionCoordinates = if (inPlayout) emptySet() else solutionCoordinates,
+            moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
             onSquareClick = { coordinate ->
                 if (inPlayout) {
                     val selected = playoutSelectedSquare
@@ -1498,6 +1518,7 @@ fun DrillScreen(
                             playoutMoves = parseSharedPlayoutMoves(
                                 SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle),
                             )
+                            moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
                             playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(playoutHandle))
                         }
 
@@ -1631,6 +1652,7 @@ fun DrillScreen(
                         )
                         playoutSelectedSquare = null
                         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playoutHandle))
+                        moveQualityAnnotation = null
                         playoutFeedback = "playout · your move"
                     },
                     enabled = SharedCoreBridge.sharedPlayoutPlyIndex(playoutHandle) > 0,
@@ -1647,6 +1669,7 @@ fun DrillScreen(
                         playoutSelectedSquare = null
                         playoutFeedback = null
                         playoutMoves = emptyList()
+                        moveQualityAnnotation = null
                         drillSnapshotStore.clear()
                     },
                     modifier = Modifier.weight(1f),
@@ -1802,6 +1825,7 @@ fun DrillScreen(
                         )
                         playoutSelectedSquare = null
                         playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
+                        moveQualityAnnotation = null
                         playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
                     }
                 },
@@ -1850,6 +1874,7 @@ fun BoardGrid(
     selectedCoordinate: String? = null,
     hintCoordinate: String? = null,
     solutionCoordinates: Set<String> = emptySet(),
+    moveQualityAnnotation: MoveQualityAnnotation? = null,
     onSquareClick: ((String) -> Unit)? = null,
 ) {
     val displayedSquares = remember(board, orientationSide) {
@@ -1873,6 +1898,9 @@ fun BoardGrid(
                             selected = square.coordinate == selectedCoordinate,
                             hinted = square.coordinate == hintCoordinate,
                             solution = square.coordinate in solutionCoordinates,
+                            moveQuality = moveQualityAnnotation
+                                ?.takeIf { it.square == square.coordinate }
+                                ?.quality,
                             onClick = onSquareClick,
                             modifier = Modifier.weight(1f),
                         )
@@ -1891,6 +1919,7 @@ fun BoardSquareCell(
     selected: Boolean = false,
     hinted: Boolean = false,
     solution: Boolean = false,
+    moveQuality: String? = null,
     onClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -1937,6 +1966,37 @@ fun BoardSquareCell(
                     .align(Alignment.Center)
                     .fillMaxSize()
                     .padding(2.dp),
+            )
+        }
+        moveQuality?.let { quality ->
+            MoveQualityBadge(
+                quality = quality,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(1.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun MoveQualityBadge(
+    quality: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(22.dp),
+        shape = CircleShape,
+        color = moveQualityColor(quality),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = moveQualityMark(quality),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
             )
         }
     }
@@ -2577,6 +2637,18 @@ fun SharedPlayoutMoveSummary.toPlySummary(): PlySummary =
         alternativeSans = emptyList(),
     )
 
+fun latestMoveQualityAnnotation(moves: List<SharedPlayoutMoveSummary>): MoveQualityAnnotation? =
+    moves.lastOrNull { it.byUser && !it.quality.isNullOrBlank() }
+        ?.let { move ->
+            val square = move.uci.takeIf { it.length >= 4 }?.substring(2, 4)
+            val quality = move.quality
+            if (square != null && square.isBoardCoordinate() && quality != null) {
+                MoveQualityAnnotation(square = square, quality = quality)
+            } else {
+                null
+            }
+        }
+
 fun moveQualityMark(quality: String): String =
     when (quality) {
         "brilliant" -> "!!"
@@ -2588,6 +2660,19 @@ fun moveQualityMark(quality: String): String =
         "blunder" -> "??"
         "miss" -> "x"
         else -> ""
+    }
+
+fun moveQualityColor(quality: String): Color =
+    when (quality) {
+        "brilliant" -> Color(0xFF1BA1A1)
+        "best" -> Color(0xFF95BB4A)
+        "excellent" -> Color(0xFF95BB4A)
+        "good" -> Color(0xFF95AF80)
+        "inaccuracy" -> Color(0xFFF7C245)
+        "mistake" -> Color(0xFFFFA459)
+        "blunder" -> Color(0xFFFA412D)
+        "miss" -> Color(0xFFFF7769)
+        else -> Color(0xFF6F655A)
     }
 
 fun pieceColorCode(openingSide: String): Char =

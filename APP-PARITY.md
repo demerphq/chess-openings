@@ -36,15 +36,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
   - Android also emits only one move sound for the combined turn, while iPhone
     emits separate user and opponent sounds. Show-line playback on Android does
     not currently emit its per-move sounds either.
-- Complete playout thinking presentation:
-  - The iPhone shows a pulsing brain indicator while Stockfish is working,
-    alongside its textual thinking status.
-  - Android currently shows only text and keeps the pre-reply board unchanged
-    until the combined bridge call completes.
-- Piece-based promotion chooser:
-  - The iPhone promotion picker displays the correctly colored queen, rook,
-    bishop, and knight artwork.
-  - Android currently presents a text-only list of piece names.
 
 ## Missing From iPhone
 

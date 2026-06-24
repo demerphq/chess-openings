@@ -54,6 +54,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -1929,6 +1930,7 @@ fun DrillScreen(
     var showSettings by remember(line) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val inPlayout = playoutHandle != 0L
+    val engineIsThinking = inPlayout && playoutFeedback == "engine thinking"
     val visiblePlies = line.plies.take(currentPlyCount)
     val visibleMoveList = visiblePlies + playoutMoves.map { it.toPlySummary() }
     val displayedPositionFen = playoutPositionFen ?: currentPositionFen
@@ -2514,13 +2516,24 @@ fun DrillScreen(
             onDismissRequest = { dismissPromotionDialog() },
             title = { Text("promote pawn") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     listOf('q', 'r', 'b', 'n').forEach { promotion ->
                         TextButton(
                             onClick = { completePromotion(promotion) },
-                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(promotionPieceName(promotion))
+                            val pieceCode = "${pieceColorCode(opening.side)}$promotion"
+                            pieceResourceId(pieceCode)?.let { resourceId ->
+                                Image(
+                                    painter = painterResource(resourceId),
+                                    contentDescription = promotionPieceName(promotion),
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(52.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -3006,6 +3019,23 @@ fun DrillScreen(
             trigger = confettiTrigger,
             modifier = Modifier.fillMaxSize(),
         )
+        if (engineIsThinking) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(28.dp),
+                    strokeWidth = 3.dp,
+                )
+            }
+        }
     }
 }
 

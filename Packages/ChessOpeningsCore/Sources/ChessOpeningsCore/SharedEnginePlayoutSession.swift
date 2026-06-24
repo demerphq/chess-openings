@@ -148,6 +148,13 @@ public enum SharedPlayoutSubmitOutcome: Equatable, Sendable {
 }
 
 public final class SharedEnginePlayoutSession: @unchecked Sendable {
+    private struct PendingUserTurn {
+        let move: Move
+        let pre: Position
+        let post: Position
+        let analysisDecision: SharedEngineDecision?
+    }
+
     public let userSide: OpeningSide
     public let level: SharedEngineLevel
     public private(set) var status: SharedPlayoutStatus
@@ -162,6 +169,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     private var history: [(move: Move, byUser: Bool)]
     private var resignationWindow: [SharedEngineEvaluation]
     private var precomputedAnalysis: (fen: String, decision: SharedEngineDecision?)?
+    private var pendingUserTurn: PendingUserTurn?
 
     public init(
         startingFEN: String,
@@ -182,6 +190,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         self.history = []
         self.resignationWindow = []
         self.precomputedAnalysis = nil
+        self.pendingUserTurn = nil
         self.status = Self.userIsOnMove(userSide: userSide, position: position)
             ? .waitingForUser
             : .engineThinking
@@ -224,6 +233,12 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     }
 
     public func submit(uci: String) async -> SharedPlayoutSubmitOutcome {
+        let staged = stageUserMove(uci: uci)
+        guard case .accepted = staged else { return staged }
+        return await completeStagedTurn()
+    }
+
+    public func stageUserMove(uci: String) -> SharedPlayoutSubmitOutcome {
         guard status == .waitingForUser else {
             if case .gameOver(let reason) = status {
                 return .gameOver(reason)
@@ -242,27 +257,60 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         }
 
         let preMovePosition = board.position
-        let analysisDecision = await analysisDecisionIfAvailable(
-            at: preMovePosition
-        )
-        var userRecord = recordApply(move, byUser: true)
-        if let quality = await moveQualityIfAvailable(
-            userMove: move,
-            pre: preMovePosition,
-            post: board.position,
-            decision: analysisDecision
-        ) {
-            userRecord = userRecord.withQuality(quality)
-            updateLatestMoveQuality(quality)
-        }
+        let analysisDecision = takePrecomputedAnalysis(at: preMovePosition)
+        let userRecord = recordApply(move, byUser: true)
         if let reason = Self.reason(forBoardState: board.state) {
             status = .gameOver(reason)
             return .gameOver(reason)
         }
         if case .promotion = board.state {
+            status = .waitingForUser
             return .accepted(userRecord, engineReply: nil)
         }
 
+        pendingUserTurn = PendingUserTurn(
+            move: move,
+            pre: preMovePosition,
+            post: board.position,
+            analysisDecision: analysisDecision
+        )
+        status = .engineThinking
+        return .accepted(userRecord, engineReply: nil)
+    }
+
+    public func completeStagedTurn() async -> SharedPlayoutSubmitOutcome {
+        guard let pending = pendingUserTurn else {
+            if case .gameOver(let reason) = status {
+                return .gameOver(reason)
+            }
+            return .notUserTurn
+        }
+        pendingUserTurn = nil
+
+        let decision: SharedEngineDecision?
+        if engine.supportsAnalysis {
+            if let cached = pending.analysisDecision {
+                decision = cached
+            } else {
+                decision = await engine.bestMove(
+                    at: pending.pre,
+                    skill: 20,
+                    budget: level.moveAnalysisBudget
+                )
+            }
+        } else {
+            decision = nil
+        }
+        var userRecord = moves.last!
+        if let quality = await moveQualityIfAvailable(
+            userMove: pending.move,
+            pre: pending.pre,
+            post: pending.post,
+            decision: decision
+        ) {
+            userRecord = userRecord.withQuality(quality)
+            updateLatestMoveQuality(quality)
+        }
         let reply = await playEngineReply()
         return .accepted(userRecord, engineReply: reply)
     }
@@ -408,20 +456,16 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         )
     }
 
-    private func analysisDecisionIfAvailable(
+    private func takePrecomputedAnalysis(
         at position: Position
-    ) async -> SharedEngineDecision? {
+    ) -> SharedEngineDecision? {
         guard engine.supportsAnalysis else { return nil }
-        if let precomputedAnalysis, precomputedAnalysis.fen == position.fen {
-            self.precomputedAnalysis = nil
-            return precomputedAnalysis.decision
+        defer { precomputedAnalysis = nil }
+        guard let precomputedAnalysis,
+              precomputedAnalysis.fen == position.fen else {
+            return nil
         }
-        precomputedAnalysis = nil
-        return await engine.bestMove(
-            at: position,
-            skill: 20,
-            budget: level.moveAnalysisBudget
-        )
+        return precomputedAnalysis.decision
     }
 
     private func moveQualityIfAvailable(
@@ -468,6 +512,8 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         moves = []
         lastEngineEval = nil
         resignationWindow = []
+        precomputedAnalysis = nil
+        pendingUserTurn = nil
         status = Self.userIsOnMove(userSide: userSide, position: start)
             ? .waitingForUser
             : .engineThinking

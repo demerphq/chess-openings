@@ -30,6 +30,40 @@ import Testing
     #expect(engine.lastSkill == 10)
 }
 
+@Test func sharedPlayoutCanRenderUserMoveBeforeEngineReply() async throws {
+    let engine = FakeSharedEngineService(
+        bestMoves: ["e7e5"],
+        evaluations: [.cp(12)]
+    )
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+
+    let staged = session.stageUserMove(uci: "e2e4")
+
+    guard case .accepted(let userMove, let reply) = staged else {
+        Issue.record("expected staged user move, got \(staged)")
+        return
+    }
+    #expect(userMove.uci == "e2e4")
+    #expect(reply == nil)
+    #expect(session.moves.map(\.uci) == ["e2e4"])
+    #expect(session.status == .engineThinking)
+    #expect(engine.bestMoveCalls == 0)
+
+    let completed = await session.completeStagedTurn()
+
+    guard case .accepted(_, let engineReply) = completed else {
+        Issue.record("expected completed turn, got \(completed)")
+        return
+    }
+    #expect(engineReply?.uci == "e7e5")
+    #expect(session.moves.map(\.uci) == ["e2e4", "e7e5"])
+    #expect(session.status == .waitingForUser)
+}
+
 @Test func sharedPlayoutGradesUserMoveWhenEngineSupportsAnalysis() async throws {
     let engine = FakeSharedEngineService(
         bestMoves: ["e2e4", "e7e5"],

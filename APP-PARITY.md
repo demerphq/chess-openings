@@ -30,9 +30,8 @@ An additional independent iPhone-to-Android audit was completed the same day.
 - Incremental turn rendering and feedback:
   - Drill turns now render and sound the user move and scripted reply
     separately on Android, matching the iPhone's 750 ms reply pause.
-  - Stockfish playout still submits a complete user-and-engine turn through one
-    blocking bridge call. Android therefore skips the intermediate user-move
-    position and emits only the final move's sound.
+  - Stockfish playout now renders and sounds the user move before running
+    move-quality analysis and requesting the engine reply.
   - A black-side drill's initial white move is still applied before Android's
     first rendered frame instead of animating after the iPhone's orientation
     pause.

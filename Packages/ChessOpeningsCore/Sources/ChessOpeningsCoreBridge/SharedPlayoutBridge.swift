@@ -61,6 +61,29 @@ public func chessOpeningsCoreSharedPlayoutSubmit(
     return SharedPlayoutBridgeOutcome(outcome).rawValue
 }
 
+@_cdecl("chess_openings_core_shared_playout_stage_user")
+public func chessOpeningsCoreSharedPlayoutStageUser(
+    _ handle: Int64,
+    _ uci: UnsafePointer<CChar>?
+) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle),
+          let uci else {
+        return SharedPlayoutBridgeOutcome.invalidHandle.rawValue
+    }
+    return SharedPlayoutBridgeOutcome(
+        session.stageUserMove(uci: String(cString: uci))
+    ).rawValue
+}
+
+@_cdecl("chess_openings_core_shared_playout_complete_turn")
+public func chessOpeningsCoreSharedPlayoutCompleteTurn(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeOutcome.invalidHandle.rawValue
+    }
+    let outcome = waitForAsync { await session.completeStagedTurn() }
+    return SharedPlayoutBridgeOutcome(outcome).rawValue
+}
+
 @_cdecl("chess_openings_core_shared_playout_best_move")
 public func chessOpeningsCoreSharedPlayoutBestMove(
     _ handle: Int64,

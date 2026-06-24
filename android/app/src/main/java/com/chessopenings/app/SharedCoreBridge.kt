@@ -32,6 +32,8 @@ object SharedCoreBridge {
     ): Long
     external fun bootstrapSharedPlayoutSession(handle: Long): Int
     external fun submitSharedPlayoutMove(handle: Long, uci: String): Int
+    external fun stageSharedPlayoutUserMove(handle: Long, uci: String): Int
+    external fun completeSharedPlayoutTurn(handle: Long): Int
     external fun sharedPlayoutBestMove(handle: Long): String?
     external fun precomputeSharedPlayoutAnalysis(handle: Long): Int
     external fun sharedPlayoutPlyIndex(handle: Long): Int

@@ -587,6 +587,14 @@ class OpeningParserTest {
     }
 
     @Test
+    fun persistsOnlyLivePlayoutSnapshots() {
+        assertEquals(true, shouldPersistPlayoutSnapshot(0))
+        assertEquals(true, shouldPersistPlayoutSnapshot(1))
+        assertEquals(true, shouldPersistPlayoutSnapshot(2))
+        assertEquals(false, shouldPersistPlayoutSnapshot(3))
+    }
+
+    @Test
     fun classifiesContextSensitiveMoveSounds() {
         fun ply(san: String) = PlySummary(san, "", null, emptyList())
 

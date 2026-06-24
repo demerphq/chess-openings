@@ -36,12 +36,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
   - Android also emits only one move sound for the combined turn, while iPhone
     emits separate user and opponent sounds. Show-line playback on Android does
     not currently emit its per-move sounds either.
-- Finished playout snapshot cleanup:
-  - The iPhone removes the active snapshot whenever playout reaches checkmate,
-    stalemate, a rules-based draw, or another terminal state.
-  - Android saves the snapshot before checking the final status after a normal
-    move or engine-first bootstrap. A finished game can therefore be resumed on
-    the next launch.
 - Drill continuity while navigating:
   - Opening settings from an iPhone drill presents a sheet over the active
     session, preserving the board and controls underneath.
@@ -54,12 +48,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
     alongside its textual thinking status.
   - Android currently shows only text and keeps the pre-reply board unchanged
     until the combined bridge call completes.
-- Playout recovery-state handling:
-  - The iPhone disables undo after game over and automatically starts fresh
-    move-quality precomputation whenever undo, a declined draw, or a declined
-    engine resignation returns control to the user.
-  - Android leaves undo enabled after game over and does not restart
-    precomputation on all of those return-to-user paths.
 - Piece-based promotion chooser:
   - The iPhone promotion picker displays the correctly colored queen, rook,
     bishop, and knight artwork.

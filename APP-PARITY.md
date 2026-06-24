@@ -36,13 +36,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
   - Android also emits only one move sound for the combined turn, while iPhone
     emits separate user and opponent sounds. Show-line playback on Android does
     not currently emit its per-move sounds either.
-- Drill continuity while navigating:
-  - Opening settings from an iPhone drill presents a sheet over the active
-    session, preserving the board and controls underneath.
-  - Android leaves the drill and switches to the settings tab. Returning to
-    training does not restore that in-memory session during the same app run.
-  - Android also clears the active snapshot when the drill back action is used,
-    whereas the iPhone retains its resumable drill snapshot.
 - Complete playout thinking presentation:
   - The iPhone shows a pulsing brain indicator while Stockfish is working,
     alongside its textual thinking status.

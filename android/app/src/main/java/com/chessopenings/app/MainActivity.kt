@@ -97,6 +97,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -1068,14 +1070,9 @@ fun ChessOpeningsHome(
             settingsRevision = settingsRevision,
             soundPlayer = soundPlayer,
             onProgressChanged = onProgressChanged,
+            onSettingsChanged = onSettingsChanged,
             onBack = {
-                drillSnapshotStore.clear()
                 drillSelection = null
-            },
-            onOpenSettings = {
-                drillSelection = null
-                detailOpening = null
-                selectedTab = AppTab.Settings
             },
         )
         return
@@ -1121,7 +1118,9 @@ fun ChessOpeningsHome(
                     settingsRevision = settingsRevision,
                     onBack = { detailOpening = null },
                     onStartDrill = { line ->
-                        drillSelection = DrillSelection(opening, line)
+                        val snapshot = drillSnapshotStore.latest()
+                            ?.takeIf { it.lineKey == progressKey(opening, line) }
+                        drillSelection = DrillSelection(opening, line, snapshot)
                     },
                     onDeleteOpening = {
                         progressStore.deleteOpening(opening)
@@ -1351,6 +1350,7 @@ fun SettingsScreen(
     settingsRevision: Int,
     onSettingsChanged: () -> Unit,
     onProgressReset: () -> Unit,
+    onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val drillMode = remember(settingsRevision) { settingsStore.drillMode }
@@ -1390,7 +1390,18 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            CatalogueHeader(tab = AppTab.Settings, openingCount = null)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CatalogueHeader(tab = AppTab.Settings, openingCount = null)
+                onClose?.let { close ->
+                    TextButton(onClick = close) {
+                        Text("done")
+                    }
+                }
+            }
         }
         item {
             SectionHeader("drill mode")
@@ -1875,8 +1886,8 @@ fun DrillScreen(
     settingsRevision: Int,
     soundPlayer: AndroidSoundPlayer,
     onProgressChanged: () -> Unit,
+    onSettingsChanged: () -> Unit,
     onBack: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     val initialPlyCount = remember(opening, line) { initialDrillPlyCount(opening, line) }
     val drillMode = remember(settingsRevision) { settingsStore.drillMode }
@@ -1915,6 +1926,7 @@ fun DrillScreen(
     var engineResignationState by remember(line) {
         mutableIntStateOf(SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE)
     }
+    var showSettings by remember(line) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val inPlayout = playoutHandle != 0L
     val visiblePlies = line.plies.take(currentPlyCount)
@@ -2587,6 +2599,34 @@ fun DrillScreen(
         )
     }
 
+    if (showSettings) {
+        Dialog(
+            onDismissRequest = { showSettings = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                SettingsScreen(
+                    settingsStore = settingsStore,
+                    progressStore = progressStore,
+                    settingsRevision = settingsRevision,
+                    onSettingsChanged = onSettingsChanged,
+                    onProgressReset = onProgressChanged,
+                    onClose = { showSettings = false },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding(),
+                )
+            }
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -2611,7 +2651,7 @@ fun DrillScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SourcePill(source = line.source)
-                    TextButton(onClick = onOpenSettings) {
+                    TextButton(onClick = { showSettings = true }) {
                         Text("settings")
                     }
                 }

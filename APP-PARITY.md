@@ -26,11 +26,7 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Playout analysis precomputation:
-  - The iPhone app starts full-strength best-move analysis while the user is
-    thinking and reuses it when grading the submitted move.
-  - Android starts move-quality analysis only after submission, increasing the
-    wait before the engine reply on slower devices.
+- None currently tracked after the 24 June 2026 audit.
 
 ## Missing From iPhone
 

@@ -53,6 +53,31 @@ import Testing
     #expect(reply?.quality == nil)
 }
 
+@Test func sharedPlayoutReusesPrecomputedMoveAnalysis() async throws {
+    let engine = FakeSharedEngineService(
+        bestMoves: ["e2e4", "e7e5"],
+        evaluations: [.cp(50), .cp(-45), .cp(12)],
+        supportsAnalysis: true
+    )
+    let session = try SharedEnginePlayoutSession(
+        startingFEN: Position.standard.fen,
+        userSide: .white,
+        engine: engine
+    )
+
+    #expect(await session.precomputeMoveAnalysis())
+    #expect(engine.bestMoveCalls == 1)
+
+    let outcome = await session.submit(uci: "e2e4")
+
+    guard case .accepted(let userMove, _) = outcome else {
+        Issue.record("expected accepted outcome, got \(outcome)")
+        return
+    }
+    #expect(userMove.quality == .excellent)
+    #expect(engine.bestMoveCalls == 2)
+}
+
 @Test func sharedPlayoutBootstrapsEngineFirstPosition() async throws {
     let engine = FakeSharedEngineService(bestMoves: ["e2e4"])
     let session = try SharedEnginePlayoutSession(

@@ -84,6 +84,14 @@ public func chessOpeningsCoreSharedPlayoutBestMove(
     return Int32(utf8.count)
 }
 
+@_cdecl("chess_openings_core_shared_playout_precompute_analysis")
+public func chessOpeningsCoreSharedPlayoutPrecomputeAnalysis(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return -1
+    }
+    return waitForAsync { await session.precomputeMoveAnalysis() } ? 1 : 0
+}
+
 @_cdecl("chess_openings_core_shared_playout_ply_index")
 public func chessOpeningsCoreSharedPlayoutPlyIndex(_ handle: Int64) -> Int32 {
     guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {

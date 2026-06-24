@@ -110,6 +110,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -1910,6 +1911,7 @@ fun DrillScreen(
     var playoutMovePending by remember(line) { mutableStateOf(false) }
     var playoutHintPending by remember(line) { mutableStateOf(false) }
     var playoutHintUci by remember(line) { mutableStateOf<String?>(null) }
+    var playoutAnalysisJob by remember(line) { mutableStateOf<Job?>(null) }
     var engineResignationState by remember(line) {
         mutableIntStateOf(SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE)
     }
@@ -1969,6 +1971,15 @@ fun DrillScreen(
         expectedMoveArrow
     }
 
+    fun schedulePlayoutAnalysis(handle: Long) {
+        playoutAnalysisJob?.cancel()
+        playoutAnalysisJob = coroutineScope.launch {
+            withContext(Dispatchers.IO) {
+                SharedCoreBridge.precomputeSharedPlayoutAnalysis(handle)
+            }
+        }
+    }
+
     DisposableEffect(opening, line) {
         val handle = SharedCoreBridge.createSharedDrillSession(line)
         sharedDrillHandle = handle
@@ -2011,6 +2022,8 @@ fun DrillScreen(
         playoutMovePending = false
         playoutHintPending = false
         playoutHintUci = null
+        playoutAnalysisJob?.cancel()
+        playoutAnalysisJob = null
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredStartFen = restoredSnapshot.playoutStartFen
@@ -2037,6 +2050,7 @@ fun DrillScreen(
                     playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
                     playoutFeedback = "resumed playout"
                     engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playout)
+                    schedulePlayoutAnalysis(playout)
                 } else {
                     playoutMovePending = true
                     playoutFeedback = "engine thinking"
@@ -2060,6 +2074,11 @@ fun DrillScreen(
                         )
                         engineResignationState =
                             SharedCoreBridge.sharedPlayoutEngineResignation(playout)
+                        if (SharedCoreBridge.sharedPlayoutStatus(playout) ==
+                            SHARED_PLAYOUT_WAITING_STATUS
+                        ) {
+                            schedulePlayoutAnalysis(playout)
+                        }
                     }
                 }
             }
@@ -2095,7 +2114,10 @@ fun DrillScreen(
         playoutFeedback = "engine thinking"
         val submittedHandle = playoutHandle
         val fallbackFen = displayedPositionFen
+        val pendingAnalysis = playoutAnalysisJob
         coroutineScope.launch {
+            pendingAnalysis?.join()
+            if (playoutHandle != submittedHandle) return@launch
             val outcome = withContext(Dispatchers.IO) {
                 SharedCoreBridge.submitSharedPlayoutMove(submittedHandle, playedUci)
             }
@@ -2131,6 +2153,11 @@ fun DrillScreen(
                         SharedCoreBridge.sharedPlayoutGameOverReason(submittedHandle),
                         opening.side,
                     )
+                    if (SharedCoreBridge.sharedPlayoutStatus(submittedHandle) ==
+                        SHARED_PLAYOUT_WAITING_STATUS
+                    ) {
+                        schedulePlayoutAnalysis(submittedHandle)
+                    }
                 }
 
                 SHARED_PLAYOUT_ILLEGAL_MOVE -> {
@@ -2287,6 +2314,8 @@ fun DrillScreen(
     }
 
     fun exitPlayout() {
+        playoutAnalysisJob?.cancel()
+        playoutAnalysisJob = null
         playoutHandle = 0L
         playoutStartFen = null
         playoutPositionFen = null
@@ -2404,6 +2433,11 @@ fun DrillScreen(
                 SharedCoreBridge.sharedPlayoutGameOverReason(handle),
                 opening.side,
             )
+            if (SharedCoreBridge.sharedPlayoutStatus(handle) ==
+                SHARED_PLAYOUT_WAITING_STATUS
+            ) {
+                schedulePlayoutAnalysis(handle)
+            }
         }
     }
 

@@ -29,6 +29,7 @@ extern int64_t chess_openings_core_shared_playout_create(const char *starting_fe
 extern int32_t chess_openings_core_shared_playout_bootstrap(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_submit(int64_t handle, const char *uci);
 extern int32_t chess_openings_core_shared_playout_best_move(int64_t handle, char *buffer, int32_t capacity);
+extern int32_t chess_openings_core_shared_playout_precompute_analysis(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_game_over_reason(int64_t handle);
@@ -447,6 +448,17 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutBestMove(
     (void)handle;
     return 0;
 #endif
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_precomputeSharedPlayoutAnalysis(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+    (void)env;
+    (void)receiver;
+    return (jint)chess_openings_core_shared_playout_precompute_analysis((int64_t)handle);
 }
 
 JNIEXPORT jint JNICALL

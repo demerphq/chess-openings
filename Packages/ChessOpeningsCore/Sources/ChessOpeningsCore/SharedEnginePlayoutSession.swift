@@ -161,6 +161,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
     private var board: Board
     private var history: [(move: Move, byUser: Bool)]
     private var resignationWindow: [SharedEngineEvaluation]
+    private var precomputedAnalysis: (fen: String, decision: SharedEngineDecision?)?
 
     public init(
         startingFEN: String,
@@ -180,6 +181,7 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         self.lastEngineEval = nil
         self.history = []
         self.resignationWindow = []
+        self.precomputedAnalysis = nil
         self.status = Self.userIsOnMove(userSide: userSide, position: position)
             ? .waitingForUser
             : .engineThinking
@@ -205,6 +207,20 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
             skill: 20,
             budget: .depth(12)
         )?.move
+    }
+
+    @discardableResult
+    public func precomputeMoveAnalysis() async -> Bool {
+        guard status == .waitingForUser, engine.supportsAnalysis else { return false }
+        let fen = board.position.fen
+        let decision = await engine.bestMove(
+            at: board.position,
+            skill: 20,
+            budget: level.moveAnalysisBudget
+        )
+        guard status == .waitingForUser, board.position.fen == fen else { return false }
+        precomputedAnalysis = (fen, decision)
+        return decision != nil
     }
 
     public func submit(uci: String) async -> SharedPlayoutSubmitOutcome {
@@ -396,6 +412,11 @@ public final class SharedEnginePlayoutSession: @unchecked Sendable {
         at position: Position
     ) async -> SharedEngineDecision? {
         guard engine.supportsAnalysis else { return nil }
+        if let precomputedAnalysis, precomputedAnalysis.fen == position.fen {
+            self.precomputedAnalysis = nil
+            return precomputedAnalysis.decision
+        }
+        precomputedAnalysis = nil
         return await engine.bestMove(
             at: position,
             skill: 20,

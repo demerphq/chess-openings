@@ -524,16 +524,17 @@ class OpeningParserTest {
     }
 
     @Test
-    fun restrictsDrillStartSquareToExpectedUserPiece() {
+    fun restrictsBoardSelectionToUsersPieces() {
         val line = sampleDrillLine()
         val startingBoard = boardSquaresAfterPlies(emptyList())
         val blackReplyBoard = boardSquaresAfterPlies(line.plies.take(1))
 
         assertEquals(true, canStartDrillMove("e2", startingBoard, line.plies[0], "white"))
-        assertEquals(false, canStartDrillMove("d2", startingBoard, line.plies[0], "white"))
+        assertEquals(true, canStartDrillMove("d2", startingBoard, line.plies[0], "white"))
         assertEquals(false, canStartDrillMove("e4", startingBoard, line.plies[0], "white"))
         assertEquals(false, canStartDrillMove("e7", startingBoard, line.plies[1], "white"))
         assertEquals(true, canStartDrillMove("e7", blackReplyBoard, line.plies[1], "black"))
+        assertEquals(false, canStartDrillMove("e2", startingBoard, null, "white"))
         assertEquals(true, canStartPlayoutMove("e2", startingBoard, "white"))
         assertEquals(false, canStartPlayoutMove("e7", startingBoard, "white"))
         assertEquals(true, canStartPlayoutMove("e7", startingBoard, "black"))
@@ -543,6 +544,21 @@ class OpeningParserTest {
         assertEquals(0, "white".toSharedDrillUserSide())
         assertEquals(1, "black".toSharedDrillUserSide())
         assertEquals("Select the piece for e4", selectExpectedPieceFeedback(line.plies[0]))
+    }
+
+    @Test
+    fun sortsOpeningCataloguesAlphabeticallyByName() {
+        val line = sampleDrillLine()
+        val openings = listOf(
+            sampleOpening("white", line).copy(name = "sicilian"),
+            sampleOpening("white", line).copy(name = "French"),
+            sampleOpening("white", line).copy(name = "caro-kann"),
+        )
+
+        assertEquals(
+            listOf("caro-kann", "French", "sicilian"),
+            sortOpeningsByName(openings).map { it.name },
+        )
     }
 
     @Test

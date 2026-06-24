@@ -45,15 +45,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
   - The iPhone promotion picker displays the correctly colored queen, rook,
     bishop, and knight artwork.
   - Android currently presents a text-only list of piece names.
-- Catalogue ordering:
-  - The iPhone train and library opening lists are sorted alphabetically.
-  - Android preserves seed and custom insertion order rather than applying the
-    same name ordering.
-- Tap-to-reselect board interaction:
-  - After selecting a piece, tapping another friendly piece on iPhone changes
-    the selection to that piece when the attempted move is illegal.
-  - Android submits the attempted source-to-source move, reports an error, and
-    clears the selection instead of reselecting the second piece.
 
 ## Missing From iPhone
 

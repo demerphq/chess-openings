@@ -975,7 +975,7 @@ fun ChessOpeningsApp() {
             progressStore.migrateCustomOpening(opening)
             drillSnapshotStore.migrateCustomOpening(opening)
         }
-        seedOpenings + customOpenings
+        sortOpeningsByName(seedOpenings + customOpenings)
     }
     remember(openings) {
         openings.firstOrNull()?.lines?.firstOrNull()?.let { line ->
@@ -2718,6 +2718,9 @@ fun DrillScreen(
 
                         if (isPromotionMove(selected, coordinate, board)) {
                             pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = true)
+                        } else if (canStartPlayoutMove(coordinate, board, opening.side)) {
+                            playoutSelectedSquare = coordinate
+                            playoutFeedback = null
                         } else {
                             submitPlayoutMove("$selected$coordinate")
                         }
@@ -2735,6 +2738,9 @@ fun DrillScreen(
                     } else {
                         if (isPromotionMove(selected, coordinate, board)) {
                             pendingPromotion = PendingPromotionMove(selected, coordinate, inPlayout = false)
+                        } else if (canStartDrillMove(coordinate, board, nextPly, opening.side)) {
+                            selectedSquare = coordinate
+                            feedback = null
                         } else {
                             submitDrillMove("$selected$coordinate")
                         }
@@ -4477,11 +4483,16 @@ fun canStartDrillMove(
     nextPly: PlySummary?,
     openingSide: String,
 ): Boolean {
-    val next = nextPly ?: return false
-    if (next.uci.length < 4 || coordinate != next.uci.substring(0, 2)) return false
+    if (nextPly == null) return false
     val pieceCode = board.firstOrNull { it.coordinate == coordinate }?.pieceCode ?: return false
     return pieceCode.isNotBlank() && pieceCode.first() == pieceColorCode(openingSide)
 }
+
+fun sortOpeningsByName(openings: List<OpeningSummary>): List<OpeningSummary> =
+    openings.sortedWith(
+        compareBy<OpeningSummary> { it.name.lowercase() }
+            .thenBy { it.name },
+    )
 
 fun canStartPlayoutMove(
     coordinate: String,

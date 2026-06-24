@@ -87,6 +87,21 @@ struct DrillView: View {
     var body: some View {
         VStack(spacing: 12) {
             if let s = session {
+                // Variation label moved out of the toolbar so long
+                // catalogue names like "Italian Game: Two Knights
+                // Defense, Traxler Counterattack, Bishop Sacrifice
+                // Line" can wrap to a second line and truncate
+                // cleanly. Pushes the board down a small amount —
+                // exactly what was asked for to fit the longer labels.
+                Text(line.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .padding(.horizontal)
+                    .frame(maxWidth: .infinity)
+
                 BoardView(
                     position: playout?.position ?? s.position,
                     orientation: opening.side,
@@ -107,6 +122,13 @@ struct DrillView: View {
                     }
                 )
                 .padding(.horizontal)
+                // Keep the board width-bound (touching the side
+                // margins) even though the header strip + control rows
+                // compete for vertical space. Without this the 1:1
+                // `.fit` board flips to height-bound and shrinks,
+                // leaving gaps at the screen edges. Priority makes the
+                // flexible Spacers yield first.
+                .layoutPriority(1)
 
                 if let p = playout {
                     PlayoutPromptRow(
@@ -174,14 +196,16 @@ struct DrillView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(opening.name)
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                    Text(line.name)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                // Just the opening name in the toolbar — the variation
+                // name has been moved to the header strip below so long
+                // labels like "Italian Game: Two Knights Defense,
+                // Traxler Counterattack, Bishop Sacrifice Line" don't
+                // overflow the principal slot.
+                Text(opening.name)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.center)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettingsSheet = true } label: {
@@ -261,6 +285,12 @@ struct DrillView: View {
             Spacer()
         }
         .padding(.horizontal)
+        // Pin to the tallest content height so resetting from
+        // `.lineComplete` (which renders the `.borderedProminent`
+        // "play it out →" button, ~36pt tall) to `.waitingForUser`
+        // (a plain ~20pt caption) doesn't change the row's height
+        // and therefore doesn't shift the controls block below.
+        .frame(minHeight: 40, alignment: .leading)
     }
 
     /// End-of-line banner. Text is "perfect" for a clean run, otherwise
@@ -435,6 +465,19 @@ struct DrillView: View {
             .tint(.purple)
             .disabled(lineExhausted && !showLineIsPlaying)
             Spacer()
+            // Tear off into an engine playout from the *current*
+            // position at any point in the drill — not just at
+            // line-complete (that path is the completeBanner's "play
+            // it out →"). Stops any show-line autoplay first so the
+            // playout starts from a settled position.
+            Button {
+                stopShowLine(on: s)
+                startPlayout(from: s)
+            } label: {
+                Label("play vs engine", systemImage: "cpu")
+            }
+            .tint(.blue)
+            Spacer()
         }
         .padding(.horizontal)
         .frame(height: controlsRowHeight)
@@ -535,18 +578,16 @@ struct DrillView: View {
         audio = player
         session = s
         // Auto-restore the playout if we left one mid-game on this
-        // line. The user must have completed the drill before the
-        // playout could have started, so fast-forward the drill's
-        // history to `.lineComplete` first — that way the move list
-        // shows the drill prefix in front of the playout moves and
-        // exiting playout lands the user back in a finished drill,
-        // matching what they had before the relaunch.
+        // line. Rebuild the drill prefix first so the move list shows
+        // the moves that led up to the playout and exiting playout
+        // lands the user back exactly where they tore off — whether
+        // that was a finished line or a mid-line position.
         if let saved = persistedPlayouts.first(where: {
             $0.openingId == opening.id && $0.lineId == line.id
         }) {
             switch saved.phaseKind {
             case .playout:
-                fastForwardDrillToCompletion(s)
+                restoreDrillPrefix(from: saved, into: s)
                 restorePlayout(from: saved)
             case .drill:
                 restoreDrill(from: saved, into: s)
@@ -575,9 +616,28 @@ struct DrillView: View {
         s.restore(history: reconstructed)
     }
 
+    /// Rebuild the drill `s` to the position a saved playout tore off
+    /// from. Prefers the persisted prefix (exact moves leading up to
+    /// the playout's `startingFEN`, so a mid-line tear-off resumes
+    /// correctly); falls back to fast-forwarding the whole book line
+    /// for legacy rows written before the prefix column existed (those
+    /// could only have started at line-complete, so completion is the
+    /// right reconstruction).
+    private func restoreDrillPrefix(
+        from saved: PersistedPlayoutState,
+        into s: DrillSession
+    ) {
+        if let prefix = saved.prefixMoves,
+           let reconstructed = prefix.reconstruct(from: .standard) {
+            s.restore(history: reconstructed)
+        } else {
+            fastForwardDrillToCompletion(s)
+        }
+    }
+
     /// Silently replays every book ply into the drill session via
     /// `autoplayNextBookPly` so it sits in `.lineComplete`. Used when
-    /// restoring a saved playout — the user already finished the
+    /// restoring a legacy saved playout — the user already finished the
     /// drill in a prior session, no need to re-grade or re-sound it.
     private func fastForwardDrillToCompletion(_ s: DrillSession) {
         let priorMoveApplied = s.onMoveApplied
@@ -699,6 +759,17 @@ struct DrillView: View {
             StoredMove(move: move, byUser: byUser)
         }
         let data = (try? JSONEncoder().encode(stored)) ?? Data()
+        // The drill session is frozen at the tear-off position behind
+        // the active playout, so its history IS the prefix that led up
+        // to `startingFEN`. Persisting it lets a relaunch rebuild the
+        // drill to that exact spot — essential now playout can start
+        // mid-line rather than only at line-complete.
+        let prefixStored = (session?.history ?? [])
+            .enumerated()
+            .map { i, move in
+                StoredMove(move: move, byUser: session?.historyByUser[i] ?? false)
+            }
+        let prefixData = (try? JSONEncoder().encode(prefixStored)) ?? Data()
         let oid = opening.id
         let lid = line.id
         let existing = persistedPlayouts.first { $0.openingId == oid && $0.lineId == lid }
@@ -711,6 +782,7 @@ struct DrillView: View {
             existing.userSideRaw = opening.side == .black ? "black" : "white"
             existing.engineLevel = p.level.stockfishSkill
             existing.movesData = data
+            existing.prefixMovesData = prefixData
             existing.savedAt = Date()
         } else {
             let new = PersistedPlayoutState(
@@ -720,6 +792,7 @@ struct DrillView: View {
                 userSideRaw: opening.side == .black ? "black" : "white",
                 engineLevel: p.level.stockfishSkill,
                 movesData: data,
+                prefixMovesData: prefixData,
                 phase: .playout
             )
             modelContext.insert(new)

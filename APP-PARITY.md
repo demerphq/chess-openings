@@ -26,11 +26,6 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Detailed game-over results:
-  - Android collapses rules-based endings into `game over`.
-  - The iPhone app distinguishes checkmate wins and losses, stalemate,
-    repetition, the 50-move rule, insufficient material, agreed draws, and
-    resignations.
 - Last-move highlighting during Stockfish playout:
   - Android deliberately suppresses the yellow source and destination
     highlights once playout starts.

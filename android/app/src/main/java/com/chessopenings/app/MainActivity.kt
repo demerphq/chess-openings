@@ -1926,6 +1926,8 @@ fun DrillScreen(
                         )
                         playoutFeedback = playoutStatusLabel(
                             SharedCoreBridge.sharedPlayoutStatus(playout),
+                            SharedCoreBridge.sharedPlayoutGameOverReason(playout),
+                            opening.side,
                         )
                         engineResignationState =
                             SharedCoreBridge.sharedPlayoutEngineResignation(playout)
@@ -1988,7 +1990,11 @@ fun DrillScreen(
                     )
                     moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
                     engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(submittedHandle)
-                    playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(submittedHandle))
+                    playoutFeedback = playoutStatusLabel(
+                        SharedCoreBridge.sharedPlayoutStatus(submittedHandle),
+                        SharedCoreBridge.sharedPlayoutGameOverReason(submittedHandle),
+                        opening.side,
+                    )
                 }
 
                 SHARED_PLAYOUT_ILLEGAL_MOVE -> {
@@ -2250,7 +2256,11 @@ fun DrillScreen(
                 engineLevel = settingsStore.engineLevel,
             )
             engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
-            playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
+            playoutFeedback = playoutStatusLabel(
+                SharedCoreBridge.sharedPlayoutStatus(handle),
+                SharedCoreBridge.sharedPlayoutGameOverReason(handle),
+                opening.side,
+            )
         }
     }
 
@@ -4244,9 +4254,30 @@ fun sharedPlayoutPositionFen(
 ): String =
     SharedCoreBridge.sharedPlayoutPositionFen(handle)?.takeIf { it.isNotBlank() } ?: fallbackFen
 
-fun playoutStatusLabel(status: Int): String =
+fun playoutStatusLabel(
+    status: Int,
+    gameOverReason: Int = SHARED_PLAYOUT_GAME_OVER_REASON_NONE,
+    userSide: String = "white",
+): String =
     when (status) {
-        SHARED_PLAYOUT_GAME_OVER_STATUS -> "game over"
+        SHARED_PLAYOUT_GAME_OVER_STATUS -> when (gameOverReason) {
+            SHARED_PLAYOUT_GAME_OVER_REASON_CHECKMATE_WHITE ->
+                if (userSide.isBlackSide()) "checkmate · you lose" else "checkmate · you win"
+            SHARED_PLAYOUT_GAME_OVER_REASON_CHECKMATE_BLACK ->
+                if (userSide.isBlackSide()) "checkmate · you win" else "checkmate · you lose"
+            SHARED_PLAYOUT_GAME_OVER_REASON_STALEMATE -> "draw by stalemate"
+            SHARED_PLAYOUT_GAME_OVER_REASON_FIFTY_MOVE -> "draw by 50-move rule"
+            SHARED_PLAYOUT_GAME_OVER_REASON_REPETITION -> "draw by repetition"
+            SHARED_PLAYOUT_GAME_OVER_REASON_INSUFFICIENT_MATERIAL ->
+                "draw by insufficient material"
+            SHARED_PLAYOUT_GAME_OVER_REASON_DRAW_AGREED -> "draw agreed"
+            SHARED_PLAYOUT_GAME_OVER_REASON_USER_RESIGNED -> "you resigned"
+            SHARED_PLAYOUT_GAME_OVER_REASON_ENGINE_RESIGNATION_PENDING ->
+                "engine offers to resign"
+            SHARED_PLAYOUT_GAME_OVER_REASON_ENGINE_RESIGNATION_ACCEPTED ->
+                "engine resigned · you win"
+            else -> "game over"
+        }
         SHARED_PLAYOUT_ENGINE_THINKING_STATUS -> "engine thinking"
         else -> "playout · your move"
     }
@@ -4472,6 +4503,17 @@ private const val SHARED_PLAYOUT_GAME_OVER = 5
 private const val SHARED_PLAYOUT_WAITING_STATUS = 0
 private const val SHARED_PLAYOUT_ENGINE_THINKING_STATUS = 1
 private const val SHARED_PLAYOUT_GAME_OVER_STATUS = 3
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_NONE = 0
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_CHECKMATE_WHITE = 1
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_CHECKMATE_BLACK = 2
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_STALEMATE = 3
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_FIFTY_MOVE = 4
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_REPETITION = 5
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_INSUFFICIENT_MATERIAL = 6
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_DRAW_AGREED = 7
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_USER_RESIGNED = 8
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_ENGINE_RESIGNATION_PENDING = 9
+private const val SHARED_PLAYOUT_GAME_OVER_REASON_ENGINE_RESIGNATION_ACCEPTED = 10
 private const val SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE = 0
 private const val SHARED_PLAYOUT_ENGINE_RESIGNATION_PENDING = 1
 private const val SNAPSHOT_PHASE_DRILL = "drill"

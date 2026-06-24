@@ -530,6 +530,23 @@ class OpeningParserTest {
     }
 
     @Test
+    fun labelsDetailedPlayoutGameOverReasons() {
+        assertEquals("checkmate · you win", playoutStatusLabel(3, 1, "white"))
+        assertEquals("checkmate · you lose", playoutStatusLabel(3, 1, "black"))
+        assertEquals("checkmate · you lose", playoutStatusLabel(3, 2, "white"))
+        assertEquals("checkmate · you win", playoutStatusLabel(3, 2, "black"))
+        assertEquals("draw by stalemate", playoutStatusLabel(3, 3))
+        assertEquals("draw by 50-move rule", playoutStatusLabel(3, 4))
+        assertEquals("draw by repetition", playoutStatusLabel(3, 5))
+        assertEquals("draw by insufficient material", playoutStatusLabel(3, 6))
+        assertEquals("draw agreed", playoutStatusLabel(3, 7))
+        assertEquals("you resigned", playoutStatusLabel(3, 8))
+        assertEquals("engine offers to resign", playoutStatusLabel(3, 9))
+        assertEquals("engine resigned · you win", playoutStatusLabel(3, 10))
+        assertEquals("game over", playoutStatusLabel(3, -1))
+    }
+
+    @Test
     fun extractsHintAndSolutionCoordinatesFromBookMove() {
         val move = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
         val promotion = PlySummary(san = "a8=Q", uci = "a7a8q", annotation = null, alternativeSans = emptyList())

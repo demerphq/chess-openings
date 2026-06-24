@@ -34,6 +34,7 @@ object SharedCoreBridge {
     external fun sharedPlayoutBestMove(handle: Long): String?
     external fun sharedPlayoutPlyIndex(handle: Long): Int
     external fun sharedPlayoutStatus(handle: Long): Int
+    external fun sharedPlayoutGameOverReason(handle: Long): Int
     external fun sharedPlayoutPositionFen(handle: Long): String?
     external fun sharedPlayoutMovesJson(handle: Long): String?
     external fun restoreSharedPlayoutMoves(handle: Long, movesJson: String): Int

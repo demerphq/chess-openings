@@ -31,6 +31,7 @@ extern int32_t chess_openings_core_shared_playout_submit(int64_t handle, const c
 extern int32_t chess_openings_core_shared_playout_best_move(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_status(int64_t handle);
+extern int32_t chess_openings_core_shared_playout_game_over_reason(int64_t handle);
 extern int32_t chess_openings_core_shared_playout_position_fen(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_moves_json(int64_t handle, char *buffer, int32_t capacity);
 extern int32_t chess_openings_core_shared_playout_restore_moves(int64_t handle, const char *moves_json);
@@ -468,6 +469,17 @@ Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutStatus(
     (void)env;
     (void)receiver;
     return (jint)chess_openings_core_shared_playout_status((int64_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_sharedPlayoutGameOverReason(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle
+) {
+    (void)env;
+    (void)receiver;
+    return (jint)chess_openings_core_shared_playout_game_over_reason((int64_t)handle);
 }
 
 JNIEXPORT jstring JNICALL

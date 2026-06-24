@@ -100,6 +100,17 @@ public func chessOpeningsCoreSharedPlayoutStatus(_ handle: Int64) -> Int32 {
     return SharedPlayoutBridgeStatus(session.status).rawValue
 }
 
+@_cdecl("chess_openings_core_shared_playout_game_over_reason")
+public func chessOpeningsCoreSharedPlayoutGameOverReason(_ handle: Int64) -> Int32 {
+    guard let session = SharedPlayoutBridgeStore.shared.session(for: handle) else {
+        return SharedPlayoutBridgeGameOverReason.invalidHandle.rawValue
+    }
+    guard case .gameOver(let reason) = session.status else {
+        return SharedPlayoutBridgeGameOverReason.none.rawValue
+    }
+    return SharedPlayoutBridgeGameOverReason(reason).rawValue
+}
+
 @_cdecl("chess_openings_core_shared_playout_position_fen")
 public func chessOpeningsCoreSharedPlayoutPositionFEN(
     _ handle: Int64,
@@ -262,6 +273,48 @@ private enum SharedPlayoutBridgeStatus: Int32 {
             self = .drawOffered
         case .gameOver:
             self = .gameOver
+        }
+    }
+}
+
+private enum SharedPlayoutBridgeGameOverReason: Int32 {
+    case none = 0
+    case checkmateWhiteWins = 1
+    case checkmateBlackWins = 2
+    case stalemate = 3
+    case fiftyMoveRule = 4
+    case threefoldRepetition = 5
+    case insufficientMaterial = 6
+    case drawAgreed = 7
+    case userResigned = 8
+    case engineResignationPending = 9
+    case engineResignationAccepted = 10
+    case invalidHandle = -1
+
+    init(_ reason: SharedGameOverReason) {
+        switch reason {
+        case .checkmate(winner: .white):
+            self = .checkmateWhiteWins
+        case .checkmate(winner: .black):
+            self = .checkmateBlackWins
+        case .stalemate:
+            self = .stalemate
+        case .fiftyMoveRule:
+            self = .fiftyMoveRule
+        case .threefoldRepetition:
+            self = .threefoldRepetition
+        case .insufficientMaterial:
+            self = .insufficientMaterial
+        case .drawAgreed:
+            self = .drawAgreed
+        case .userResigned:
+            self = .userResigned
+        case .engineResigned(accepted: .none):
+            self = .engineResignationPending
+        case .engineResigned(accepted: .some(true)):
+            self = .engineResignationAccepted
+        case .engineResigned(accepted: .some(false)):
+            self = .none
         }
     }
 }

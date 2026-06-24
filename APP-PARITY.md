@@ -26,14 +26,6 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Stable identity and cleanup for custom-opening progress:
-  - Android derives a line's progress key from its visible content instead of
-    its opening and line IDs. Identical custom lines can therefore share
-    progress and active-session state.
-  - Deleting a custom opening on Android removes its definition but leaves its
-    stored progress behind, allowing that progress to reappear if equivalent
-    content is created later. SwiftData IDs and cascade deletion keep these
-    records independent on iPhone.
 - Context-sensitive chess sounds:
   - Android currently uses generic generated tones for move, error, and
     completion feedback.

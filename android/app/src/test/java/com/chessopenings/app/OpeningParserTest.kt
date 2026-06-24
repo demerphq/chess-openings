@@ -79,6 +79,7 @@ class OpeningParserTest {
                         PlySummary("e4", "e2e4", null, emptyList()),
                         PlySummary("e5", "e7e5", null, emptyList()),
                     ),
+                    id = "line-1",
                 ),
             ),
             id = "custom-1",
@@ -458,6 +459,45 @@ class OpeningParserTest {
 
         assertEquals(progressKey(opening, line), progressKey(same, line))
         assertEquals(false, progressKey(opening, line) == progressKey(other, line))
+    }
+
+    @Test
+    fun keepsIdenticalCustomLinesProgressIndependent() {
+        val lineA = sampleDrillLine().copy(id = "line-a")
+        val lineB = sampleDrillLine().copy(id = "line-b")
+        val opening = sampleOpening(side = "white", line = lineA).copy(
+            id = "custom-opening",
+            isSeed = false,
+            lines = listOf(lineA, lineB),
+        )
+
+        assertEquals(false, progressKey(opening, lineA) == progressKey(opening, lineB))
+        assertEquals(
+            legacyProgressKey(opening, lineA),
+            legacyProgressKey(opening, lineB),
+        )
+    }
+
+    @Test
+    fun assignsStableIdsWhenDecodingLegacyCustomLines() {
+        val decoded = decodeCustomOpenings(
+            """
+            [{
+              "id":"opening-1",
+              "name":"legacy",
+              "eco":"",
+              "side":"white",
+              "lines":[{
+                "name":"main",
+                "source":"masters",
+                "tags":[],
+                "plies":[{"san":"e4","uci":"e2e4"}]
+              }]
+            }]
+            """.trimIndent(),
+        )
+
+        assertEquals("legacy-opening-1-0", decoded.single().lines.single().id)
     }
 
     @Test

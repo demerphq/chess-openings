@@ -196,6 +196,7 @@ data class LineSummary(
     val source: String,
     val tags: List<String>,
     val plies: List<PlySummary>,
+    val id: String = "",
 ) {
     val sans: List<String>
         get() = plies.map { it.san }
@@ -316,7 +317,7 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
         opening: OpeningSummary,
         line: LineSummary,
     ): LineProgressSummary {
-        val prefix = progressKey(opening, line)
+        val prefix = storedProgressPrefix(opening, line)
         return LineProgressSummary(
             correctStreak = preferences.getInt("$prefix.correctStreak", 0),
             isLearned = preferences.getBoolean("$prefix.isLearned", false),
@@ -332,7 +333,7 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
         opening: OpeningSummary,
         line: LineSummary,
     ): List<AndroidMistake> =
-        decodeMistakes(preferences.getString("${progressKey(opening, line)}.mistakes", null))
+        decodeMistakes(preferences.getString("${storedProgressPrefix(opening, line)}.mistakes", null))
 
     fun recordCompletion(
         opening: OpeningSummary,
@@ -360,7 +361,7 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
     ) {
         val prefix = progressKey(opening, line)
         val next = appendRollingMistake(
-            current = decodeMistakes(preferences.getString("$prefix.mistakes", null)),
+            current = lineMistakes(opening, line),
             expectedPly = expectedPly,
             playedUci = playedUci,
             atMillis = atMillis,
@@ -370,9 +371,52 @@ class AndroidProgressStore(private val preferences: SharedPreferences) {
             .apply()
     }
 
+    fun migrateCustomOpening(opening: OpeningSummary) {
+        if (opening.isSeed) return
+        opening.lines.forEach { line ->
+            val target = progressKey(opening, line)
+            val legacy = legacyProgressKey(opening, line)
+            if (target == legacy || hasStoredProgress(target) || !hasStoredProgress(legacy)) {
+                return@forEach
+            }
+            val editor = preferences.edit()
+                .putInt("$target.correctStreak", preferences.getInt("$legacy.correctStreak", 0))
+                .putBoolean("$target.isLearned", preferences.getBoolean("$legacy.isLearned", false))
+                .putInt("$target.timesAttempted", preferences.getInt("$legacy.timesAttempted", 0))
+                .putInt("$target.timesCompleted", preferences.getInt("$legacy.timesCompleted", 0))
+            preferences.getString("$legacy.mistakes", null)?.let {
+                editor.putString("$target.mistakes", it)
+            }
+            editor.apply()
+        }
+    }
+
+    fun deleteOpening(opening: OpeningSummary) {
+        val prefixes = opening.lines.flatMap { line ->
+            listOf(progressKey(opening, line), legacyProgressKey(opening, line))
+        }.toSet()
+        val editor = preferences.edit()
+        preferences.all.keys
+            .filter { key -> prefixes.any { prefix -> key == prefix || key.startsWith("$prefix.") } }
+            .forEach(editor::remove)
+        editor.apply()
+    }
+
     fun clearAll() {
         preferences.edit().clear().apply()
     }
+
+    private fun storedProgressPrefix(opening: OpeningSummary, line: LineSummary): String {
+        val primary = progressKey(opening, line)
+        return if (hasStoredProgress(primary)) primary else legacyProgressKey(opening, line)
+    }
+
+    private fun hasStoredProgress(prefix: String): Boolean =
+        preferences.contains("$prefix.correctStreak") ||
+            preferences.contains("$prefix.isLearned") ||
+            preferences.contains("$prefix.timesAttempted") ||
+            preferences.contains("$prefix.timesCompleted") ||
+            preferences.contains("$prefix.mistakes")
 }
 
 class AndroidSettingsStore(private val preferences: SharedPreferences) {
@@ -503,6 +547,24 @@ class AndroidDrillSnapshotStore(private val preferences: SharedPreferences) {
             .remove("active.engineLevel")
             .apply()
     }
+
+    fun migrateCustomOpening(opening: OpeningSummary) {
+        val activeKey = preferences.getString("active.lineKey", null) ?: return
+        opening.lines.firstOrNull { legacyProgressKey(opening, it) == activeKey }?.let { line ->
+            preferences.edit()
+                .putString("active.lineKey", progressKey(opening, line))
+                .apply()
+        }
+    }
+
+    fun clearForOpening(opening: OpeningSummary) {
+        val activeKey = preferences.getString("active.lineKey", null) ?: return
+        val belongsToOpening = opening.lines.any { line ->
+            activeKey == progressKey(opening, line) ||
+                activeKey == legacyProgressKey(opening, line)
+        }
+        if (belongsToOpening) clear()
+    }
 }
 
 class AndroidCustomOpeningStore(private val preferences: SharedPreferences) {
@@ -529,9 +591,14 @@ class AndroidCustomOpeningStore(private val preferences: SharedPreferences) {
 
     fun addLine(openingId: String, line: LineSummary): OpeningSummary? {
         var updated: OpeningSummary? = null
+        val persistedLine = if (line.id.isBlank()) {
+            line.copy(id = UUID.randomUUID().toString())
+        } else {
+            line
+        }
         val openings = openings().map { opening ->
             if (opening.id == openingId) {
-                opening.copy(lines = opening.lines + line).also { updated = it }
+                opening.copy(lines = opening.lines + persistedLine).also { updated = it }
             } else {
                 opening
             }
@@ -600,6 +667,7 @@ fun encodeCustomOpenings(openings: List<OpeningSummary>): String =
                     JSONArray(
                         opening.lines.map { line ->
                             JSONObject()
+                                .put("id", line.id)
                                 .put("name", line.name)
                                 .put("source", line.source)
                                 .put("tags", JSONArray(line.tags))
@@ -647,6 +715,9 @@ fun decodeCustomOpenings(jsonText: String?): List<OpeningSummary> {
                                 annotation = null,
                                 alternativeSans = emptyList(),
                             )
+                        },
+                        id = line.optString("id").ifBlank {
+                            "legacy-${opening.getString("id")}-$lineIndex"
                         },
                     )
                 },
@@ -717,6 +788,16 @@ fun mistakeSummaryText(mistakes: List<AndroidMistake>): String? {
 }
 
 fun progressKey(
+    opening: OpeningSummary,
+    line: LineSummary,
+): String {
+    if (!opening.isSeed && opening.id.isNotBlank() && line.id.isNotBlank()) {
+        return "line.${sha256Hex("custom\u001F${opening.id}\u001F${line.id}")}"
+    }
+    return legacyProgressKey(opening, line)
+}
+
+fun legacyProgressKey(
     opening: OpeningSummary,
     line: LineSummary,
 ): String {
@@ -850,7 +931,12 @@ fun ChessOpeningsApp() {
             .use { parseOpeningSummaries(it.readText()) }
     }
     val openings = remember(seedOpenings, customOpeningRevision) {
-        seedOpenings + customOpeningStore.openings()
+        val customOpenings = customOpeningStore.openings()
+        customOpenings.forEach { opening ->
+            progressStore.migrateCustomOpening(opening)
+            drillSnapshotStore.migrateCustomOpening(opening)
+        }
+        seedOpenings + customOpenings
     }
     remember(openings) {
         openings.firstOrNull()?.lines?.firstOrNull()?.let { line ->
@@ -1001,6 +1087,8 @@ fun ChessOpeningsHome(
                         drillSelection = DrillSelection(opening, line)
                     },
                     onDeleteOpening = {
+                        progressStore.deleteOpening(opening)
+                        drillSnapshotStore.clearForOpening(opening)
                         customOpeningStore.delete(opening.id)
                         onCustomOpeningsChanged()
                         detailOpening = null

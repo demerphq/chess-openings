@@ -26,11 +26,6 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Context-sensitive chess sounds:
-  - Android currently uses generic generated tones for move, error, and
-    completion feedback.
-  - The iPhone app has separate sounds for the user's move, the opponent's move,
-    captures, checks, castling, promotion, errors, and completion events.
 - Playout analysis precomputation:
   - The iPhone app starts full-strength best-move analysis while the user is
     thinking and reuses it when grading the submitted move.

@@ -2,7 +2,9 @@ package com.chessopenings.app
 
 import android.content.SharedPreferences
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.SoundPool
 import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.SystemClock
@@ -297,22 +299,51 @@ data class AndroidMistake(
     val atMillis: Long,
 )
 
-class AndroidSoundPlayer : AutoCloseable {
+enum class AndroidSoundEffect(val fileName: String) {
+    MoveSelf("move-self"),
+    MoveOpponent("move-opponent"),
+    Capture("capture"),
+    Castle("castle"),
+    Promote("promote"),
+    Check("move-check"),
+    WrongMove("incorrect-2-15"),
+    LineVictory("result-good-2-15"),
+}
+
+class AndroidSoundPlayer(context: Context) : AutoCloseable {
+    private val soundPool = SoundPool.Builder()
+        .setMaxStreams(3)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_GAME)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        .build()
     private val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
-
-    fun playMove() {
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, 80)
+    private val soundIds = AndroidSoundEffect.entries.associateWith { effect ->
+        runCatching {
+            context.assets.openFd("sounds/${effect.fileName}.mp3").use { descriptor ->
+                soundPool.load(descriptor, 1)
+            }
+        }.getOrDefault(0)
     }
 
-    fun playWrongMove() {
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_NACK, 120)
-    }
-
-    fun playCompletion() {
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 160)
+    fun play(effect: AndroidSoundEffect) {
+        val soundId = soundIds[effect] ?: 0
+        if (soundId != 0 && soundPool.play(soundId, 1f, 1f, 1, 0, 1f) != 0) {
+            return
+        }
+        val (tone, duration) = when (effect) {
+            AndroidSoundEffect.WrongMove -> ToneGenerator.TONE_PROP_NACK to 120
+            AndroidSoundEffect.LineVictory -> ToneGenerator.TONE_PROP_BEEP2 to 160
+            else -> ToneGenerator.TONE_PROP_ACK to 80
+        }
+        toneGenerator.startTone(tone, duration)
     }
 
     override fun close() {
+        soundPool.release()
         toneGenerator.release()
     }
 }
@@ -915,7 +946,7 @@ fun ChessOpeningsApp() {
             context.getSharedPreferences("custom-openings", Context.MODE_PRIVATE),
         )
     }
-    val soundPlayer = remember { AndroidSoundPlayer() }
+    val soundPlayer = remember(context) { AndroidSoundPlayer(context.applicationContext) }
     DisposableEffect(soundPlayer) {
         onDispose { soundPlayer.close() }
     }
@@ -2082,10 +2113,17 @@ fun DrillScreen(
                         madeMistake = madeMistake,
                         engineLevel = settingsStore.engineLevel,
                     )
-                    playMoveSound(settingsStore, soundPlayer)
                     playoutMoves = parseSharedPlayoutMoves(
                         SharedCoreBridge.sharedPlayoutMovesJson(submittedHandle),
                     )
+                    playoutMoves.lastOrNull()?.let { move ->
+                        playMoveSound(
+                            settingsStore = settingsStore,
+                            soundPlayer = soundPlayer,
+                            ply = move.toPlySummary(),
+                            byUser = move.byUser,
+                        )
+                    }
                     moveQualityAnnotation = latestMoveQualityAnnotation(playoutMoves)
                     engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(submittedHandle)
                     playoutFeedback = playoutStatusLabel(
@@ -2182,7 +2220,14 @@ fun DrillScreen(
                         },
                     )
                 } else {
-                    playMoveSound(settingsStore, soundPlayer)
+                    line.plies.getOrNull(currentPlyCount - 1)?.let { ply ->
+                        playMoveSound(
+                            settingsStore = settingsStore,
+                            soundPlayer = soundPlayer,
+                            ply = ply,
+                            byUser = isUserPly(currentPlyCount - 1, opening.side),
+                        )
+                    }
                     drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
                     restartThinkingClock()
                 }
@@ -4226,23 +4271,45 @@ fun recordDrillCompletionIfNeeded(
 fun playMoveSound(
     settingsStore: AndroidSettingsStore,
     soundPlayer: AndroidSoundPlayer,
+    ply: PlySummary,
+    byUser: Boolean,
 ) {
-    if (settingsStore.soundsEnabled) soundPlayer.playMove()
+    if (settingsStore.soundsEnabled) {
+        soundPlayer.play(soundEffectForMove(ply, byUser))
+    }
 }
 
 fun playWrongMoveSound(
     settingsStore: AndroidSettingsStore,
     soundPlayer: AndroidSoundPlayer,
 ) {
-    if (settingsStore.soundsEnabled) soundPlayer.playWrongMove()
+    if (settingsStore.soundsEnabled) soundPlayer.play(AndroidSoundEffect.WrongMove)
 }
 
 fun playCompletionSound(
     settingsStore: AndroidSettingsStore,
     soundPlayer: AndroidSoundPlayer,
 ) {
-    if (settingsStore.soundsEnabled) soundPlayer.playCompletion()
+    if (settingsStore.soundsEnabled) soundPlayer.play(AndroidSoundEffect.LineVictory)
 }
+
+fun soundEffectForMove(
+    ply: PlySummary,
+    byUser: Boolean,
+): AndroidSoundEffect {
+    val san = ply.san
+    return when {
+        san.endsWith("+") || san.endsWith("#") -> AndroidSoundEffect.Check
+        san.startsWith("O-O") || san.startsWith("0-0") -> AndroidSoundEffect.Castle
+        "=" in san -> AndroidSoundEffect.Promote
+        "x" in san -> AndroidSoundEffect.Capture
+        byUser -> AndroidSoundEffect.MoveSelf
+        else -> AndroidSoundEffect.MoveOpponent
+    }
+}
+
+fun isUserPly(plyIndex: Int, openingSide: String): Boolean =
+    if (openingSide.isBlackSide()) plyIndex % 2 == 1 else plyIndex % 2 == 0
 
 data class SharedDrillSnapshot(
     val plyIndex: Int,

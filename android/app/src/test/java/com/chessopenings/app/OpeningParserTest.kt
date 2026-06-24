@@ -587,6 +587,22 @@ class OpeningParserTest {
     }
 
     @Test
+    fun classifiesContextSensitiveMoveSounds() {
+        fun ply(san: String) = PlySummary(san, "", null, emptyList())
+
+        assertEquals(AndroidSoundEffect.MoveSelf, soundEffectForMove(ply("e4"), byUser = true))
+        assertEquals(AndroidSoundEffect.MoveOpponent, soundEffectForMove(ply("e5"), byUser = false))
+        assertEquals(AndroidSoundEffect.Capture, soundEffectForMove(ply("Bxf7"), byUser = true))
+        assertEquals(AndroidSoundEffect.Check, soundEffectForMove(ply("Bxf7+"), byUser = true))
+        assertEquals(AndroidSoundEffect.Castle, soundEffectForMove(ply("O-O"), byUser = true))
+        assertEquals(AndroidSoundEffect.Promote, soundEffectForMove(ply("e8=Q"), byUser = true))
+        assertEquals(true, isUserPly(0, "white"))
+        assertEquals(false, isUserPly(1, "white"))
+        assertEquals(false, isUserPly(0, "black"))
+        assertEquals(true, isUserPly(1, "black"))
+    }
+
+    @Test
     fun extractsHintAndSolutionCoordinatesFromBookMove() {
         val move = PlySummary(san = "e4", uci = "e2e4", annotation = null, alternativeSans = emptyList())
         val promotion = PlySummary(san = "a8=Q", uci = "a7a8q", annotation = null, alternativeSans = emptyList())

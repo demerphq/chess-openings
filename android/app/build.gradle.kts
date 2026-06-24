@@ -31,6 +31,7 @@ android {
 
     androidResources {
         noCompress += "nnue"
+        noCompress += "mp3"
     }
 
     packaging {
@@ -40,6 +41,10 @@ android {
 
 val syncSharedSeedAssets = tasks.register<Sync>("syncSharedSeedAssets") {
     from(rootProject.file("../Chess Openings/Resources/openings.json"))
+    from(rootProject.file("../Chess Openings/Resources/Sounds")) {
+        include("*.mp3")
+        into("sounds")
+    }
     from(rootProject.file("stockfish")) {
         include("nnue/*.nnue")
         into("stockfish")

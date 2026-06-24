@@ -1995,6 +1995,39 @@ fun DrillScreen(
         }
     }
 
+    fun scheduleBlackSideOpeningMove() {
+        if (!opening.side.isBlackSide() || line.plies.isEmpty() || sharedDrillHandle == 0L) {
+            return
+        }
+        drillMovePending = true
+        feedback = "thinking..."
+        lastPromptAtMillis = null
+        val stagedHandle = sharedDrillHandle
+        coroutineScope.launch {
+            delay(DRILL_SCRIPTED_REPLY_DELAY_MS)
+            if (sharedDrillHandle != stagedHandle) return@launch
+            SharedCoreBridge.autoplaySharedDrillNext(stagedHandle)
+            val openingSnapshot = sharedDrillSnapshot(stagedHandle)
+            currentPlyCount = openingSnapshot.plyIndex
+            currentPositionFen = openingSnapshot.positionFen
+            line.plies.firstOrNull()?.let { ply ->
+                playMoveSound(
+                    settingsStore = settingsStore,
+                    soundPlayer = soundPlayer,
+                    ply = ply,
+                    byUser = false,
+                )
+            }
+            drillMovePending = false
+            feedback = null
+            lastPromptAtMillis = if (timingEligible && currentPlyCount < line.plies.size) {
+                SystemClock.elapsedRealtime()
+            } else {
+                null
+            }
+        }
+    }
+
     DisposableEffect(opening, line) {
         val handle = SharedCoreBridge.createSharedDrillSession(line)
         sharedDrillHandle = handle
@@ -2041,6 +2074,9 @@ fun DrillScreen(
         playoutAnalysisJob?.cancel()
         playoutAnalysisJob = null
         engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
+        if (restoredSnapshot == null && opening.side.isBlackSide()) {
+            scheduleBlackSideOpeningMove()
+        }
         if (restoredSnapshot?.phase == SNAPSHOT_PHASE_PLAYOUT) {
             val restoredStartFen = restoredSnapshot.playoutStartFen
                 ?: restoredSnapshot.playoutFen
@@ -3102,6 +3138,9 @@ fun DrillScreen(
                             expectedMoveArrow = null
                             pendingPromotion = null
                             showLineIsPlaying = false
+                            if (opening.side.isBlackSide()) {
+                                scheduleBlackSideOpeningMove()
+                            }
                         },
                         enabled = currentPlyCount > initialPlyCount && !drillMovePending,
                         modifier = Modifier.weight(1f),
@@ -4591,9 +4630,6 @@ fun resetSharedDrillForOpening(
 ): SharedDrillSnapshot {
     if (handle == 0L) return SharedDrillSnapshot(0, STARTING_POSITION_FEN)
     SharedCoreBridge.resetSharedDrillSession(handle)
-    if (opening.side.isBlackSide()) {
-        SharedCoreBridge.autoplaySharedDrillNext(handle)
-    }
     return sharedDrillSnapshot(handle)
 }
 

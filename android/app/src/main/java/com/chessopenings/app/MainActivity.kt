@@ -1895,16 +1895,42 @@ fun DrillScreen(
             )
             if (playout != 0L) {
                 val movesJson = restoredSnapshot.playoutMovesJson
-                if (movesJson.isNullOrBlank() || SharedCoreBridge.restoreSharedPlayoutMoves(playout, movesJson) != 1) {
-                    SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
-                }
                 playoutHandle = playout
                 playoutStartFen = restoredStartFen
-                playoutPositionFen = sharedPlayoutPositionFen(playout, restoredSnapshot.playoutFen ?: restoredStartFen)
-                playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
-                playoutFeedback = "resumed playout"
                 moveQualityAnnotation = null
-                engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playout)
+                val restoredMoves = !movesJson.isNullOrBlank() &&
+                    SharedCoreBridge.restoreSharedPlayoutMoves(playout, movesJson) == 1
+                if (restoredMoves) {
+                    playoutPositionFen = sharedPlayoutPositionFen(
+                        playout,
+                        restoredSnapshot.playoutFen ?: restoredStartFen,
+                    )
+                    playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(playout))
+                    playoutFeedback = "resumed playout"
+                    engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playout)
+                } else {
+                    playoutMovePending = true
+                    playoutFeedback = "engine thinking"
+                    coroutineScope.launch {
+                        withContext(Dispatchers.IO) {
+                            SharedCoreBridge.bootstrapSharedPlayoutSession(playout)
+                        }
+                        if (playoutHandle != playout) return@launch
+                        playoutMovePending = false
+                        playoutPositionFen = sharedPlayoutPositionFen(
+                            playout,
+                            restoredSnapshot.playoutFen ?: restoredStartFen,
+                        )
+                        playoutMoves = parseSharedPlayoutMoves(
+                            SharedCoreBridge.sharedPlayoutMovesJson(playout),
+                        )
+                        playoutFeedback = playoutStatusLabel(
+                            SharedCoreBridge.sharedPlayoutStatus(playout),
+                        )
+                        engineResignationState =
+                            SharedCoreBridge.sharedPlayoutEngineResignation(playout)
+                    }
+                }
             }
         }
         onDispose {
@@ -2131,17 +2157,28 @@ fun DrillScreen(
     }
 
     fun offerPlayoutDraw() {
+        if (playoutMovePending || playoutHintPending || playoutHandle == 0L) return
         pendingPlayoutConfirmation = null
-        val status = SharedCoreBridge.offerSharedPlayoutDraw(playoutHandle)
-        playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-            "draw agreed"
-        } else {
-            playoutStatusLabel(status)
+        playoutMovePending = true
+        playoutFeedback = "draw offered · awaiting engine reply"
+        val offeredHandle = playoutHandle
+        coroutineScope.launch {
+            val status = withContext(Dispatchers.IO) {
+                SharedCoreBridge.offerSharedPlayoutDraw(offeredHandle)
+            }
+            if (playoutHandle != offeredHandle) return@launch
+            playoutMovePending = false
+            playoutFeedback = if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                "draw agreed"
+            } else {
+                playoutStatusLabel(status)
+            }
+            if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
+                drillSnapshotStore.clear()
+            }
+            engineResignationState =
+                SharedCoreBridge.sharedPlayoutEngineResignation(offeredHandle)
         }
-        if (status == SHARED_PLAYOUT_GAME_OVER_STATUS) {
-            drillSnapshotStore.clear()
-        }
-        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(playoutHandle)
     }
 
     fun resignPlayout() {
@@ -2167,6 +2204,7 @@ fun DrillScreen(
     }
 
     fun startPlayout() {
+        if (playoutMovePending) return
         val handle = SharedCoreBridge.createSharedPlayoutSession(
             currentPositionFen,
             opening.side.toSharedDrillUserSide(),
@@ -2180,28 +2218,40 @@ fun DrillScreen(
 
         playoutHandle = handle
         playoutStartFen = currentPositionFen
-        SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
-        playoutPositionFen = sharedPlayoutPositionFen(handle, currentPositionFen)
-        drillSnapshotStore.savePlayout(
-            opening = opening,
-            line = line,
-            positionFen = playoutPositionFen ?: currentPositionFen,
-            startingFen = currentPositionFen,
-            movesJson = SharedCoreBridge.sharedPlayoutMovesJson(handle).orEmpty(),
-            madeMistake = madeMistake,
-            engineLevel = settingsStore.engineLevel,
-        )
         playoutSelectedSquare = null
         pendingPromotion = null
-        playoutMoves = parseSharedPlayoutMoves(SharedCoreBridge.sharedPlayoutMovesJson(handle))
+        playoutMoves = emptyList()
         moveQualityAnnotation = null
-        playoutMovePending = false
+        playoutMovePending = true
         playoutHintPending = false
         playoutHintUci = null
         hintShown = false
         solutionShown = false
-        engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
-        playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
+        engineResignationState = SHARED_PLAYOUT_ENGINE_RESIGNATION_NONE
+        playoutFeedback = "engine thinking"
+        val startingFen = currentPositionFen
+        coroutineScope.launch {
+            withContext(Dispatchers.IO) {
+                SharedCoreBridge.bootstrapSharedPlayoutSession(handle)
+            }
+            if (playoutHandle != handle) return@launch
+            playoutMovePending = false
+            playoutPositionFen = sharedPlayoutPositionFen(handle, startingFen)
+            playoutMoves = parseSharedPlayoutMoves(
+                SharedCoreBridge.sharedPlayoutMovesJson(handle),
+            )
+            drillSnapshotStore.savePlayout(
+                opening = opening,
+                line = line,
+                positionFen = playoutPositionFen ?: startingFen,
+                startingFen = startingFen,
+                movesJson = SharedCoreBridge.sharedPlayoutMovesJson(handle).orEmpty(),
+                madeMistake = madeMistake,
+                engineLevel = settingsStore.engineLevel,
+            )
+            engineResignationState = SharedCoreBridge.sharedPlayoutEngineResignation(handle)
+            playoutFeedback = playoutStatusLabel(SharedCoreBridge.sharedPlayoutStatus(handle))
+        }
     }
 
     LaunchedEffect(showLineIsPlaying, line) {

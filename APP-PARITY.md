@@ -26,12 +26,6 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Non-blocking Stockfish operations during playout:
-  - Starting an engine-first playout, restoring one without usable move history,
-    and evaluating a draw offer currently run synchronously on Android's UI
-    thread.
-  - The iPhone app performs these operations asynchronously and keeps its
-    thinking state responsive.
 - Detailed game-over results:
   - Android collapses rules-based endings into `game over`.
   - The iPhone app distinguishes checkmate wins and losses, stalemate,

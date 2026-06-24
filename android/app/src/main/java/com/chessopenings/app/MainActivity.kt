@@ -11,7 +11,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -76,6 +80,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -3583,10 +3588,20 @@ fun BoardSquareCell(
     modifier: Modifier = Modifier,
 ) {
     val baseColor = if (dark) Color(0xFF9D7A55) else Color(0xFFE9D7B9)
+    val hintTransition = rememberInfiniteTransition(label = "hint square")
+    val hintPulse by hintTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "hint pulse",
+    )
     val background = when {
         selected -> Color(0xFF6EA4B8)
         solution -> Color(0xFF88B6D8)
-        hinted -> Color(0xFF88B6D8)
+        hinted -> lerp(baseColor, Color(0xFF88B6D8), hintPulse)
         legalTarget -> Color(0xFFC4D8E8)
         square.highlighted -> Color(0xFFF2E29B)
         else -> baseColor

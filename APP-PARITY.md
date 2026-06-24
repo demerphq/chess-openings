@@ -31,10 +31,6 @@ Last audited against both implementations: 24 June 2026.
     completion feedback.
   - The iPhone app has separate sounds for the user's move, the opponent's move,
     captures, checks, castling, promotion, errors, and completion events.
-- Pulsing source-square hints:
-  - Android's first hint state uses a static blue source-square highlight.
-  - The iPhone app pulses the source square to draw attention to the piece that
-    should move.
 - Playout analysis precomputation:
   - The iPhone app starts full-strength best-move analysis while the user is
     thinking and reuses it when grading the submitted move.

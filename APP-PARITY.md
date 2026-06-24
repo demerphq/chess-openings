@@ -5,6 +5,7 @@ It is scoped to user-visible app behavior, not implementation details that are
 expected to differ by platform.
 
 Last audited against both implementations: 24 June 2026.
+An additional independent iPhone-to-Android audit was completed the same day.
 
 ## General Parity Issues We Cannot Or Will Not Change
 
@@ -26,7 +27,52 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- None currently tracked after the 24 June 2026 audit.
+- Incremental turn rendering and feedback:
+  - The iPhone applies and renders the user's move immediately, waits before a
+    scripted drill reply, and renders the reply as a separate move.
+  - Android currently submits a complete drill or Stockfish turn through one
+    blocking bridge call and updates the board only after the reply is ready.
+    This skips the intermediate user-move position and its piece animation.
+  - Android also emits only one move sound for the combined turn, while iPhone
+    emits separate user and opponent sounds. Show-line playback on Android does
+    not currently emit its per-move sounds either.
+- Finished playout snapshot cleanup:
+  - The iPhone removes the active snapshot whenever playout reaches checkmate,
+    stalemate, a rules-based draw, or another terminal state.
+  - Android saves the snapshot before checking the final status after a normal
+    move or engine-first bootstrap. A finished game can therefore be resumed on
+    the next launch.
+- Drill continuity while navigating:
+  - Opening settings from an iPhone drill presents a sheet over the active
+    session, preserving the board and controls underneath.
+  - Android leaves the drill and switches to the settings tab. Returning to
+    training does not restore that in-memory session during the same app run.
+  - Android also clears the active snapshot when the drill back action is used,
+    whereas the iPhone retains its resumable drill snapshot.
+- Complete playout thinking presentation:
+  - The iPhone shows a pulsing brain indicator while Stockfish is working,
+    alongside its textual thinking status.
+  - Android currently shows only text and keeps the pre-reply board unchanged
+    until the combined bridge call completes.
+- Playout recovery-state handling:
+  - The iPhone disables undo after game over and automatically starts fresh
+    move-quality precomputation whenever undo, a declined draw, or a declined
+    engine resignation returns control to the user.
+  - Android leaves undo enabled after game over and does not restart
+    precomputation on all of those return-to-user paths.
+- Piece-based promotion chooser:
+  - The iPhone promotion picker displays the correctly colored queen, rook,
+    bishop, and knight artwork.
+  - Android currently presents a text-only list of piece names.
+- Catalogue ordering:
+  - The iPhone train and library opening lists are sorted alphabetically.
+  - Android preserves seed and custom insertion order rather than applying the
+    same name ordering.
+- Tap-to-reselect board interaction:
+  - After selecting a piece, tapping another friendly piece on iPhone changes
+    the selection to that piece when the attempted move is illegal.
+  - Android submits the attempted source-to-source move, reports an error, and
+    clears the selection instead of reselecting the second piece.
 
 ## Missing From iPhone
 

@@ -26,10 +26,6 @@ Last audited against both implementations: 24 June 2026.
 
 ## Missing From Android
 
-- Last-move highlighting during Stockfish playout:
-  - Android deliberately suppresses the yellow source and destination
-    highlights once playout starts.
-  - The iPhone app continues to highlight the latest move throughout playout.
 - Stable identity and cleanup for custom-opening progress:
   - Android derives a line's progress key from its visible content instead of
     its opening and line IDs. Identical custom lines can therefore share
@@ -47,10 +43,6 @@ Last audited against both implementations: 24 June 2026.
   - Android's first hint state uses a static blue source-square highlight.
   - The iPhone app pulses the source square to draw attention to the piece that
     should move.
-- Explicit playout move counter:
-  - The iPhone move list includes a separate `move N` counter during playout.
-  - Android numbers moves in the move list but has no equivalent compact
-    current-move counter.
 - Playout analysis precomputation:
   - The iPhone app starts full-strength best-move analysis while the user is
     thinking and reuses it when grading the submitted move.

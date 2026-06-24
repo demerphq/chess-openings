@@ -1808,10 +1808,15 @@ fun DrillScreen(
     val captureTargetCoordinates = legalTargets
         .filter { it.isCapture }
         .mapTo(mutableSetOf()) { it.square }
-    val board = remember(displayedPositionFen, visiblePlies, inPlayout) {
+    val highlightedMoveUci = if (inPlayout) {
+        playoutMoves.lastOrNull()?.uci ?: visiblePlies.lastOrNull()?.uci.orEmpty()
+    } else {
+        visiblePlies.lastOrNull()?.uci.orEmpty()
+    }
+    val board = remember(displayedPositionFen, highlightedMoveUci) {
         boardSquaresFromFen(
             fen = displayedPositionFen,
-            highlightedMove = if (inPlayout) "" else visiblePlies.lastOrNull()?.uci.orEmpty(),
+            highlightedMove = highlightedMoveUci,
         )
     }
     val nextPly = if (inPlayout) null else line.plies.getOrNull(currentPlyCount)
@@ -2537,6 +2542,11 @@ fun DrillScreen(
             MoveListFlow(
                 plies = visibleMoveList,
                 drillPlyCount = if (inPlayout) visiblePlies.size else null,
+                currentMoveLabel = if (inPlayout) {
+                    "move ${visibleMoveList.size / 2 + 1}"
+                } else {
+                    null
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -2880,6 +2890,7 @@ fun DrillCompletionBanner(
 fun MoveListFlow(
     plies: List<PlySummary>,
     drillPlyCount: Int?,
+    currentMoveLabel: String? = null,
     modifier: Modifier = Modifier,
 ) {
     if (plies.isEmpty()) {
@@ -2892,27 +2903,42 @@ fun MoveListFlow(
         return
     }
 
-    Box(
-        modifier = modifier
-            .heightIn(max = 92.dp)
-            .verticalScroll(rememberScrollState()),
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(max = 92.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            plies.forEachIndexed { index, ply ->
-                val isDrillPrefix = drillPlyCount != null && index < drillPlyCount
-                Text(
-                    text = moveListToken(index, ply),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface.copy(
-                        alpha = if (isDrillPrefix) 0.52f else 0.82f,
-                    ),
-                )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                plies.forEachIndexed { index, ply ->
+                    val isDrillPrefix = drillPlyCount != null && index < drillPlyCount
+                    Text(
+                        text = moveListToken(index, ply),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = if (isDrillPrefix) 0.52f else 0.82f,
+                        ),
+                    )
+                }
             }
+        }
+        currentMoveLabel?.let { label ->
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            )
         }
     }
 }

@@ -1920,6 +1920,7 @@ fun DrillScreen(
     var pendingPlayoutConfirmation by remember(line) { mutableStateOf<PlayoutConfirmationAction?>(null) }
     var playoutMoves by remember(line) { mutableStateOf(emptyList<SharedPlayoutMoveSummary>()) }
     var moveQualityAnnotation by remember(line) { mutableStateOf<MoveQualityAnnotation?>(null) }
+    var drillMovePending by remember(line) { mutableStateOf(false) }
     var playoutMovePending by remember(line) { mutableStateOf(false) }
     var playoutHintPending by remember(line) { mutableStateOf(false) }
     var playoutHintUci by remember(line) { mutableStateOf<String?>(null) }
@@ -2033,6 +2034,7 @@ fun DrillScreen(
         pendingPlayoutConfirmation = null
         playoutMoves = emptyList()
         moveQualityAnnotation = null
+        drillMovePending = false
         playoutMovePending = false
         playoutHintPending = false
         playoutHintUci = null
@@ -2237,13 +2239,28 @@ fun DrillScreen(
     }
 
     fun submitDrillMove(playedUci: String) {
+        if (drillMovePending || sharedDrillHandle == 0L) return
         pendingPromotion = null
         stopThinkingClock()
-        when (SharedCoreBridge.submitSharedDrillMove(sharedDrillHandle, playedUci)) {
+        when (SharedCoreBridge.submitSharedDrillUserMove(sharedDrillHandle, playedUci)) {
             SHARED_DRILL_ACCEPTED, SHARED_DRILL_LINE_COMPLETE -> {
                 val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
                 currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
                 currentPositionFen = snapshot.positionFen
+                line.plies.getOrNull(currentPlyCount - 1)?.let { ply ->
+                    playMoveSound(
+                        settingsStore = settingsStore,
+                        soundPlayer = soundPlayer,
+                        ply = ply,
+                        byUser = true,
+                    )
+                }
+                selectedSquare = null
+                feedback = null
+                hintShown = false
+                solutionShown = false
+                expectedMoveArrow = null
+                showLineIsPlaying = false
                 if (currentPlyCount >= line.plies.size) {
                     completionWasSpeedy = isSpeedyDrillCompletion(
                         userThinkingMillis = userThinkingMillis,
@@ -2275,24 +2292,71 @@ fun DrillScreen(
                             onProgressChanged()
                         },
                     )
+                    drillMovePending = false
                 } else {
-                    line.plies.getOrNull(currentPlyCount - 1)?.let { ply ->
-                        playMoveSound(
-                            settingsStore = settingsStore,
-                            soundPlayer = soundPlayer,
-                            ply = ply,
-                            byUser = isUserPly(currentPlyCount - 1, opening.side),
-                        )
-                    }
                     drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
-                    restartThinkingClock()
+                    drillMovePending = true
+                    feedback = "thinking..."
+                    val stagedHandle = sharedDrillHandle
+                    coroutineScope.launch {
+                        delay(DRILL_SCRIPTED_REPLY_DELAY_MS)
+                        if (sharedDrillHandle != stagedHandle) return@launch
+                        val replyOutcome = SharedCoreBridge.autoplaySharedDrillNext(stagedHandle)
+                        val replySnapshot = sharedDrillSnapshot(
+                            stagedHandle,
+                            fallbackPlyIndex = currentPlyCount,
+                        )
+                        currentPlyCount = replySnapshot.plyIndex.coerceAtLeast(currentPlyCount)
+                        currentPositionFen = replySnapshot.positionFen
+                        line.plies.getOrNull(currentPlyCount - 1)?.let { ply ->
+                            playMoveSound(
+                                settingsStore = settingsStore,
+                                soundPlayer = soundPlayer,
+                                ply = ply,
+                                byUser = false,
+                            )
+                        }
+                        drillMovePending = false
+                        feedback = null
+                        if (replyOutcome == SHARED_DRILL_LINE_COMPLETE ||
+                            currentPlyCount >= line.plies.size
+                        ) {
+                            completionWasSpeedy = isSpeedyDrillCompletion(
+                                userThinkingMillis = userThinkingMillis,
+                                linePlyCount = line.plies.size,
+                                timingEligible = timingEligible,
+                                completedViaShowLine = completedViaShowLine,
+                            )
+                            playCompletionSound(settingsStore, soundPlayer)
+                            recordDrillCompletionIfNeeded(
+                                progressStore = progressStore,
+                                drillSnapshotStore = drillSnapshotStore,
+                                opening = opening,
+                                line = line,
+                                madeMistake = madeMistake,
+                                masteryThreshold = masteryThreshold,
+                                alreadyRecorded = completionRecorded,
+                                onRecorded = {
+                                    completionRecorded = true
+                                    val isLearned = progressStore.lineProgress(opening, line).isLearned
+                                    if (shouldTriggerLearningConfetti(
+                                            wasLearned = wasLearnedAtSessionStart,
+                                            isLearned = isLearned,
+                                            completedViaShowLine = completedViaShowLine,
+                                        )
+                                    ) {
+                                        confettiTrigger += 1
+                                        wasLearnedAtSessionStart = true
+                                    }
+                                    onProgressChanged()
+                                },
+                            )
+                        } else {
+                            drillSnapshotStore.save(opening, line, currentPlyCount, madeMistake)
+                            restartThinkingClock()
+                        }
+                    }
                 }
-                selectedSquare = null
-                feedback = null
-                hintShown = false
-                solutionShown = false
-                expectedMoveArrow = null
-                showLineIsPlaying = false
             }
 
             SHARED_DRILL_INCORRECT -> {
@@ -2481,6 +2545,14 @@ fun DrillScreen(
             val snapshot = sharedDrillSnapshot(sharedDrillHandle, fallbackPlyIndex = currentPlyCount)
             currentPlyCount = snapshot.plyIndex.coerceAtLeast(currentPlyCount)
             currentPositionFen = snapshot.positionFen
+            line.plies.getOrNull(currentPlyCount - 1)?.let { ply ->
+                playMoveSound(
+                    settingsStore = settingsStore,
+                    soundPlayer = soundPlayer,
+                    ply = ply,
+                    byUser = false,
+                )
+            }
             selectedSquare = null
             feedback = null
             hintShown = false
@@ -2698,7 +2770,7 @@ fun DrillScreen(
                 boardArrow = boardArrow,
                 moveQualityAnnotation = if (inPlayout) moveQualityAnnotation else null,
                 canDragCoordinate = { coordinate ->
-                    if (playoutMovePending || playoutHintPending) {
+                    if (drillMovePending || playoutMovePending || playoutHintPending) {
                         false
                     } else if (inPlayout) {
                         canStartPlayoutMove(coordinate, board, opening.side)
@@ -2716,6 +2788,7 @@ fun DrillScreen(
                     }
                 },
                 onSquareClick = { coordinate ->
+                    if (drillMovePending) return@BoardGrid
                     if (inPlayout) {
                         if (playoutMovePending || playoutHintPending) return@BoardGrid
                         val selected = playoutSelectedSquare
@@ -2926,7 +2999,7 @@ fun DrillScreen(
                                 }
                             }
                         },
-                        enabled = nextPly != null,
+                        enabled = nextPly != null && !drillMovePending,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
@@ -2957,7 +3030,7 @@ fun DrillScreen(
                             pendingPromotion = null
                             showLineIsPlaying = false
                         },
-                        enabled = currentPlyCount > initialPlyCount,
+                        enabled = currentPlyCount > initialPlyCount && !drillMovePending,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("undo")
@@ -2983,7 +3056,7 @@ fun DrillScreen(
                             pendingPromotion = null
                             showLineIsPlaying = false
                         },
-                        enabled = currentPlyCount > initialPlyCount,
+                        enabled = currentPlyCount > initialPlyCount && !drillMovePending,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("reset")
@@ -3005,7 +3078,8 @@ fun DrillScreen(
                             pendingPromotion = null
                         }
                     },
-                    enabled = currentPlyCount < line.plies.size || showLineIsPlaying,
+                    enabled = !drillMovePending &&
+                        (currentPlyCount < line.plies.size || showLineIsPlaying),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (showLineIsPlaying) "pause" else "show line")
@@ -4864,4 +4938,5 @@ private const val CUSTOM_OPENINGS_KEY = "custom.openings.json"
 private const val DEFAULT_ENGINE_LEVEL = 10
 private const val DEFAULT_MOVE_ANALYSIS_DEPTH = 10
 private const val DEFAULT_MOVE_QUALITY_BADGE_MS = 1750
+private const val DRILL_SCRIPTED_REPLY_DELAY_MS = 750L
 private const val STARTING_POSITION_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

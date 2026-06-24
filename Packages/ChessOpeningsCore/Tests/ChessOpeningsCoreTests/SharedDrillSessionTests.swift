@@ -21,6 +21,25 @@ import Testing
     #expect(session.nextBookPly?.san == "Nf3")
 }
 
+@Test func sharedDrillCanStageUserMoveBeforeScriptedReply() throws {
+    let session = SharedDrillSession(line: italianLine)
+
+    let outcome = session.submitUserMoveOnly(uci: "e2e4")
+
+    guard case .accepted(let turn) = outcome else {
+        Issue.record("expected accepted outcome, got \(outcome)")
+        return
+    }
+    #expect(turn.userMove.uci == "e2e4")
+    #expect(turn.scriptedReply == nil)
+    #expect(session.plyIndex == 1)
+    #expect(session.nextBookPly?.san == "e5")
+
+    let reply = try #require(session.autoplayNextBookPly())
+    #expect(reply.uci == "e7e5")
+    #expect(session.plyIndex == 2)
+}
+
 @Test func sharedDrillRejectsOffBookMoveWithoutAdvancing() throws {
     let session = SharedDrillSession(line: italianLine)
 

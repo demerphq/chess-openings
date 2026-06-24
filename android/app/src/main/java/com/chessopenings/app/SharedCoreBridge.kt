@@ -13,6 +13,7 @@ object SharedCoreBridge {
     external fun configureSharedEngine(executablePath: String?, nnueDirectory: String?)
     external fun createSharedDrillSession(lineJson: String): Long
     external fun submitSharedDrillMove(handle: Long, uci: String): Int
+    external fun submitSharedDrillUserMove(handle: Long, uci: String): Int
     external fun autoplaySharedDrillNext(handle: Long): Int
     external fun sharedDrillPlyIndex(handle: Long): Int
     external fun sharedDrillStatus(handle: Long): Int

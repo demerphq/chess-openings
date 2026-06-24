@@ -65,6 +65,31 @@ public final class SharedDrillSession {
 
     @discardableResult
     public func submit(uci: String) -> SharedDrillSubmitOutcome {
+        let userOutcome = submitUserMoveOnly(uci: uci)
+        guard case .accepted(let userTurn) = userOutcome else {
+            return userOutcome
+        }
+        guard status != .lineComplete else {
+            return userOutcome
+        }
+
+        let replyRecord = autoplayNextBookPly()
+        if plyIndex >= line.plies.count {
+            status = .lineComplete
+        } else {
+            status = .waitingForUser
+        }
+        return .accepted(
+            SharedDrillTurn(
+                userMove: userTurn.userMove,
+                scriptedReply: replyRecord,
+                status: status
+            )
+        )
+    }
+
+    @discardableResult
+    public func submitUserMoveOnly(uci: String) -> SharedDrillSubmitOutcome {
         guard let expected = nextBookPly else {
             status = .lineComplete
             return .lineComplete
@@ -89,7 +114,6 @@ public final class SharedDrillSession {
         }
 
         let userRecord = apply(expectedMove, san: expected.san, byUser: true)
-        let replyRecord = autoplayNextBookPly()
         if plyIndex >= line.plies.count {
             status = .lineComplete
         } else {
@@ -98,7 +122,7 @@ public final class SharedDrillSession {
         return .accepted(
             SharedDrillTurn(
                 userMove: userRecord,
-                scriptedReply: replyRecord,
+                scriptedReply: nil,
                 status: status
             )
         )

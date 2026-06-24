@@ -38,6 +38,18 @@ public func chessOpeningsCoreSharedDrillSubmit(
     }
 }
 
+@_cdecl("chess_openings_core_shared_drill_submit_user")
+public func chessOpeningsCoreSharedDrillSubmitUser(
+    _ handle: Int64,
+    _ uci: UnsafePointer<CChar>?
+) -> Int32 {
+    guard let session = SharedDrillBridgeStore.shared.session(for: handle),
+          let uci else {
+        return SharedDrillBridgeOutcome.invalidHandle.rawValue
+    }
+    return bridgeOutcome(session.submitUserMoveOnly(uci: String(cString: uci)))
+}
+
 @_cdecl("chess_openings_core_shared_drill_autoplay_next")
 public func chessOpeningsCoreSharedDrillAutoplayNext(_ handle: Int64) -> Int32 {
     guard let session = SharedDrillBridgeStore.shared.session(for: handle) else {
@@ -163,6 +175,21 @@ private enum SharedDrillBridgeOutcome: Int32 {
     case invalidBookMove = 4
     case lineComplete = 5
     case invalidHandle = -1
+}
+
+private func bridgeOutcome(_ outcome: SharedDrillSubmitOutcome) -> Int32 {
+    switch outcome {
+    case .accepted:
+        return SharedDrillBridgeOutcome.accepted.rawValue
+    case .incorrect:
+        return SharedDrillBridgeOutcome.incorrect.rawValue
+    case .invalidInput:
+        return SharedDrillBridgeOutcome.invalidInput.rawValue
+    case .invalidBookMove:
+        return SharedDrillBridgeOutcome.invalidBookMove.rawValue
+    case .lineComplete:
+        return SharedDrillBridgeOutcome.lineComplete.rawValue
+    }
 }
 
 private enum SharedDrillBridgeStatus: Int32 {

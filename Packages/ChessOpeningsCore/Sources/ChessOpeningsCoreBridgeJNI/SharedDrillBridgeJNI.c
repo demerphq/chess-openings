@@ -15,6 +15,7 @@ typedef int32_t jint;
 
 extern int64_t chess_openings_core_shared_drill_create(const char *line_json);
 extern int32_t chess_openings_core_shared_drill_submit(int64_t handle, const char *uci);
+extern int32_t chess_openings_core_shared_drill_submit_user(int64_t handle, const char *uci);
 extern int32_t chess_openings_core_shared_drill_autoplay_next(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_ply_index(int64_t handle);
 extern int32_t chess_openings_core_shared_drill_status(int64_t handle);
@@ -125,6 +126,35 @@ Java_com_chessopenings_app_SharedCoreBridge_submitSharedDrillMove(
         return 3;
     }
     int32_t outcome = chess_openings_core_shared_drill_submit((int64_t)handle, chars);
+    (*env)->ReleaseStringUTFChars(env, uci, chars);
+    return (jint)outcome;
+#else
+    (void)env;
+    (void)receiver;
+    (void)handle;
+    (void)uci;
+    return -1;
+#endif
+}
+
+JNIEXPORT jint JNICALL
+Java_com_chessopenings_app_SharedCoreBridge_submitSharedDrillUserMove(
+    JNIEnv *env,
+    jobject receiver,
+    jlong handle,
+    jstring uci
+) {
+#if defined(__ANDROID__)
+    (void)receiver;
+    if (uci == 0) {
+        return 3;
+    }
+
+    const char *chars = (*env)->GetStringUTFChars(env, uci, 0);
+    if (chars == 0) {
+        return 3;
+    }
+    int32_t outcome = chess_openings_core_shared_drill_submit_user((int64_t)handle, chars);
     (*env)->ReleaseStringUTFChars(env, uci, chars);
     return (jint)outcome;
 #else

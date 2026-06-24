@@ -28,14 +28,14 @@ An additional independent iPhone-to-Android audit was completed the same day.
 ## Missing From Android
 
 - Incremental turn rendering and feedback:
-  - The iPhone applies and renders the user's move immediately, waits before a
-    scripted drill reply, and renders the reply as a separate move.
-  - Android currently submits a complete drill or Stockfish turn through one
-    blocking bridge call and updates the board only after the reply is ready.
-    This skips the intermediate user-move position and its piece animation.
-  - Android also emits only one move sound for the combined turn, while iPhone
-    emits separate user and opponent sounds. Show-line playback on Android does
-    not currently emit its per-move sounds either.
+  - Drill turns now render and sound the user move and scripted reply
+    separately on Android, matching the iPhone's 750 ms reply pause.
+  - Stockfish playout still submits a complete user-and-engine turn through one
+    blocking bridge call. Android therefore skips the intermediate user-move
+    position and emits only the final move's sound.
+  - A black-side drill's initial white move is still applied before Android's
+    first rendered frame instead of animating after the iPhone's orientation
+    pause.
 
 ## Missing From iPhone
 

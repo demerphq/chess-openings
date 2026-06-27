@@ -4,8 +4,7 @@ This document tracks feature parity between the Apple app and the Android app.
 It is scoped to user-visible app behavior, not implementation details that are
 expected to differ by platform.
 
-Last audited against both implementations: 24 June 2026.
-An additional independent iPhone-to-Android audit was completed the same day.
+Last audited against both implementations: 24 June 2026, after the latest main-branch merge.
 
 ## General Parity Issues We Cannot Or Will Not Change
 
@@ -42,7 +41,8 @@ An additional independent iPhone-to-Android audit was completed the same day.
 - Android-style drill prompt wording:
   - Android hides the next SAN in normal drill mode and prompts the user to
     select a move.
-  - The iPhone app should be checked for equivalent wording and leakage.
+  - The iPhone app still says `your move` and does not match that drill-mode
+    wording.
 - Animated solution arrows:
   - Android animates move arrows from short to full length, then holds at full
     length with increasingly long pauses.
@@ -55,10 +55,6 @@ An additional independent iPhone-to-Android audit was completed the same day.
   - Android uses a lighter yellow for last-move highlights.
   - Android adds a subtle border around highlighted cells so adjacent highlighted
     squares keep a visible boundary.
-- Android emulator/developer workflow documentation:
-  - Android has explicit Linux emulator build/run documentation.
-  - Apple developer workflow documentation should stay comparable if Apple-side
-    onboarding becomes a goal.
 - Engine playout promotion handling:
   - The shared engine path used by Android accepts five-character promotion UCI
     moves such as `e7e8q`.
